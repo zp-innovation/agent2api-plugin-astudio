@@ -1,0 +1,220 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { authorizeScan } from "../lib/login.mjs";
+import { renew, settle } from "../lib/session.mjs";
+import { HINTS, hostOf, identitiesOf } from "../lib/scan.mjs";
+import { usageReport } from "../lib/usage.mjs";
+import { checkinReport } from "../lib/checkin.mjs";
+
+const ok = (data) => ({ flag: true, code: 0, desc: "", data });
+const busy = (code, desc) => ({ flag: false, code, desc, data: null });
+
+/** 用一张「按路径派发」的假上游替换全局 fetch（插件里全部出网都走全局 fetch）。 */
+function stub(routes) {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url ?? String(input));
+    const method = (init.method ?? "GET").toUpperCase();
+    const key = method + " " + url.pathname;
+    calls.push({ key, url });
+    const handler = routes[key];
+    if (!handler) return new Response("unexpected " + key, { status: 500 });
+    const body = typeof handler === "function" ? await handler({ url, init, calls }) : handler;
+    return new Response(typeof body === "string" ? body : JSON.stringify(body), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  return { calls, restore() { globalThis.fetch = original; } };
+}
+
+test("scan sign-in completes end to end and reports the hint of each poll", async () => {
+  let polls = 0;
+  const seen = [];
+  const holder = { auth: null };
+  const world = stub({
+    "GET /SSOService/wx/scanlogin/qrcode": ok("https://sso.xfyun.cn/static/qr/abc.png"),
+    "GET /SSOService/wx/scanlogin/uids": () => {
+      polls += 1;
+      seen.push(holder.auth?.instructions);
+      return polls === 1
+        ? busy(20003, "请求地址错误")
+        : ok({ infoList: [{ uid: 0, ssoSessionId: "placeholder" }, { uid: "10086", ssoSessionId: "sid-1" }], headimgurl: "" });
+    },
+    "POST /xingchen-studio/auth/bearer-token": ok({ modelBearerToken: "bearer-1" }),
+    "POST /xingchen-studio/tenant-app/v2/init-app": ok({ banned: false }),
+    "GET /xingchen-studio/userInfo": ok({ userInfo: { uid: 10086, mobile: "13800000000", nickname: "星辰" } }),
+  });
+  try {
+    const authorization = await authorizeScan(undefined, {});
+    holder.auth = authorization;
+    assert.equal(authorization.method, "auto");
+    assert.equal(authorization.url, "https://sso.xfyun.cn/static/qr/abc.png");
+    assert.equal(hostOf(authorization.url), "sso.xfyun.cn");
+    assert.equal(authorization.instructions, HINTS.ready);
+
+    const result = await authorization.callback();
+    assert.equal(result.type, "success");
+    assert.equal(result.access, "bearer-1");
+    assert.equal(typeof result.refresh, "string");
+    assert.ok(result.expires > Date.now());
+    assert.equal(result.uid, "10086");
+    assert.equal(result.accountId, "10086");
+    assert.equal(result.name, "星辰");
+    assert.deepEqual(result.session, { accountId: "10086", uid: "10086", ssoSessionId: "sid-1", token: "" });
+    assert.equal(result.source, "scan");
+
+    // 第一次轮询就已经是「等待扫码」：start 时的 ready 文案会被宿主去重（与流程文案
+    // 相同就不显示），靠它会让面板前 1.5 秒显示宿主的默认提示。
+    assert.deepEqual(seen, [HINTS.waiting, HINTS.waiting]);
+    // 换凭据期间提示停在「正在换取模型凭据」，直到 callback 落定
+    assert.equal(authorization.instructions, HINTS.settling);
+
+    // SSO 请求不带 Cookie，也不带 clientType/studioVersion
+    const sso = world.calls.filter((call) => call.url.hostname === "sso.xfyun.cn");
+    assert.equal(sso.length, 3);
+    for (const call of sso) {
+      assert.equal(call.url.searchParams.get("fd").length, 8);
+    }
+    // 换凭据用的是 Cookie 会话
+    const mint = world.calls.find((call) => call.key === "POST /xingchen-studio/auth/bearer-token");
+    assert.ok(mint);
+  } finally {
+    world.restore();
+  }
+});
+
+test("scanned but unbound wechat keeps waiting with its own hint", async () => {
+  const holder = { auth: null };
+  const seen = [];
+  const controller = new AbortController();
+  const world = stub({
+    "GET /SSOService/wx/scanlogin/qrcode": ok("https://sso.xfyun.cn/static/qr/abc.png"),
+    "GET /SSOService/wx/scanlogin/uids": () => {
+      seen.push(holder.auth?.instructions);
+      return ok({ infoList: [] });
+    },
+  });
+  try {
+    const authorization = await authorizeScan(undefined, { signal: controller.signal });
+    holder.auth = authorization;
+    const running = authorization.callback(undefined, { signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 4_600));
+    controller.abort(new Error("stop"));
+    await assert.rejects(running);
+    assert.ok(seen.includes(HINTS.unbound), JSON.stringify(seen));
+    assert.ok(!seen.includes(HINTS.settling));
+  } finally {
+    world.restore();
+  }
+});
+
+test("a refused qrcode request becomes a readable failure", async () => {
+  const world = stub({ "GET /SSOService/wx/scanlogin/qrcode": busy(50000, "系统繁忙") });
+  try {
+    const authorization = await authorizeScan(undefined, {});
+    assert.equal(authorization.type, "failed");
+    assert.match(authorization.error, /系统繁忙/);
+    assert.match(authorization.error, /获取扫码二维码失败/);
+  } finally {
+    world.restore();
+  }
+});
+
+test("placeholders never settle a sign-in", () => {
+  assert.deepEqual(identitiesOf({ infoList: [{ uid: 0, ssoSessionId: "x" }, { uid: "7" }] }), []);
+});
+
+test("settle refuses an account without an id", async () => {
+  await assert.rejects(settle({ accountId: "", uid: "" }, { requireWebToken: false }), /缺少账号/);
+});
+
+test("renew mints a fresh bearer from the saved session", async () => {
+  const world = stub({ "POST /xingchen-studio/auth/bearer-token": ok({ modelBearerToken: "bearer-2" }) });
+  try {
+    const next = await renew({ session: { accountId: "10086", uid: "10086", ssoSessionId: "sid-1" } });
+    assert.equal(next.access, "bearer-2");
+    assert.equal(next.type, "oauth");
+    assert.ok(next.expires > Date.now());
+    assert.equal(next.session.ssoSessionId, "sid-1");
+  } finally {
+    world.restore();
+  }
+});
+
+test("renew without a session asks for a new sign-in", async () => {
+  await assert.rejects(renew({ access: "x", key: "x" }), (error) => error.signIn === "expired");
+});
+
+test("usage reports both point pools without letting them gate requests", async () => {
+  const world = stub({
+    "GET /xingchen-studio/points/balance": ok({ totalBalance: 1200, sparkTotalBalance: 0, activityBalance: 500, activityNextExpireTime: "2027-01-01 00:00:00" }),
+    "GET /xingchen-studio/membership/me": ok({ planName: "旗舰版", endTime: "2027-06-01 00:00:00", uid: 10086 }),
+  });
+  try {
+    const report = await usageReport({ access: "bearer-1", session: { accountId: "10086", ssoSessionId: "sid-1" } });
+    assert.equal(report.plan, "旗舰版");
+    assert.equal(report.user, "10086");
+    assert.equal(report.until, "2027-06-01 00:00:00");
+    assert.deepEqual(report.windows.map((row) => row.name), ["通用积分", "星火积分"]);
+    for (const row of report.windows) assert.equal(row.aside, true);
+    assert.equal(report.windows[0].balance, 1200);
+    assert.equal(report.windows[0].runsOut, 500);
+    assert.equal(report.error, undefined);
+  } finally {
+    world.restore();
+  }
+});
+
+test("usage surfaces an expired session instead of a broken reading", async () => {
+  const world = stub({
+    "GET /xingchen-studio/points/balance": () => ({ flag: false, code: 80000, desc: "请重新登录", data: null }),
+    "GET /xingchen-studio/membership/me": ok({}),
+  });
+  try {
+    const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
+    assert.equal(report.signIn, "expired");
+  } finally {
+    world.restore();
+  }
+});
+
+test("checkin reports the points it actually saw arrive", async () => {
+  let reads = 0;
+  const world = stub({
+    "GET /xingchen-studio/membership/plan-config": ok({ dailyLoginEnabled: true }),
+    "GET /xingchen-studio/points/balance": () => {
+      reads += 1;
+      return ok({ totalBalance: reads === 1 ? 100 : 130, sparkTotalBalance: 0 });
+    },
+    "POST /xingchen-studio/tenant-app/v2/init-app": ok({ banned: false }),
+  });
+  try {
+    const report = await checkinReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
+    assert.equal(report.outcome, "claimed");
+    assert.match(report.credit, /通用积分 \+30/);
+  } finally {
+    world.restore();
+  }
+});
+
+test("checkin says so when the reward is not observable yet", async () => {
+  const world = stub({
+    "GET /xingchen-studio/membership/plan-config": ok({ dailyLoginEnabled: true }),
+    "GET /xingchen-studio/points/balance": ok({ totalBalance: 100, sparkTotalBalance: 0 }),
+    "POST /xingchen-studio/tenant-app/v2/init-app": ok({ banned: false }),
+  });
+  try {
+    const report = await checkinReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
+    assert.equal(report.outcome, "done");
+    assert.match(report.message, /未观测到新增积分/);
+  } finally {
+    world.restore();
+  }
+});
+
+test("checkin is ineligible for a paste-only account", async () => {
+  const report = await checkinReport({ access: "bearer-1" });
+  assert.equal(report.outcome, "ineligible");
+});
