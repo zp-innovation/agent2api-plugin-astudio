@@ -159,6 +159,38 @@ ssoSessionId=…; sso_sessionid=…; account_id=…; token=…        ← Cookie
 输入可以是文件，也可以是**目录**，插件在两层内（最多 80 个 ≤512 KiB 的候选文件）找第一个认得出
 会话的文件。它读的是**网关这台机器**的磁盘，跨机部署时网关本机没有 AStudio 客户端，请改用粘贴。
 
+## 二维码在面板内弹窗（宿主补丁）
+
+面板点「微信扫码登录」时，**展示方式是宿主决定的，插件改不了**：桥接脚本 `shim_js()` 被编译进
+agent2api-server 二进制（`web_shim.rs:47`），只要 `login/start` 回了非空 `authUrl`，它就
+`window.open("about:blank", "_blank")` 再 `location.replace(authUrl)`（`web_shim.rs:1206-1225`）
+—— 于是二维码图片跑到了新标签页。想让它变成面板内弹窗，只能在宿主侧动手。
+
+`host-patch/` 就是这件事的成品：
+
+| 文件 | 作用 |
+| --- | --- |
+| `astudio-qr-modal.js` | 覆盖 `window.open`，只拦截「`about:blank` + `_blank`」这一种签名；URL 像二维码图片时画面板内弹窗，否则退回原生新标签页 |
+| `install.sh` | `docker cp` 到容器 `/app/ui/`，并在 `index.html` 的 `</body>` 前幂等注入 `<script>`（先备份成 `index.html.a2a-orig`）；`install.sh uninstall` 还原 |
+| `verify-modal.py` | 用 playwright 取一张**真二维码**跑补丁：断言弹窗出现、图片真加载、`context.pages` 仍是 1、取消按钮生效、非图片 URL 仍开新标签页 |
+
+```bash
+# 在网关宿主机上（容器名默认 agent2api，可用 CONTAINER=xxx 覆盖）
+sudo bash install.sh          # 安装
+sudo bash install.sh uninstall # 还原
+```
+
+**为什么拦截点是安全的**：整个 `/app/ui` 里 `window.open(` 出现 0 次、`about:blank` 0 次；
+宿主 shim 里也只有 `web_shim.rs:1217` 这一处是「`about:blank` + `_blank`」。所以这个签名只可能
+来自动态登录流程。非图片 URL（例如以后接入需要网页授权的登录）照旧开新标签页，行为不变。
+
+弹窗跟着 `workbuddyDesktop.getLoginState()` 走：流程结束/取消/超时 → 自动关闭；hint 实时显示
+「等待微信扫码…」「二维码已过期…」等状态；Esc 等于点「取消登录」（在捕获阶段吞掉事件，不会连带关掉
+面板下层的「添加账号」弹窗）。
+
+> **镜像升级会覆盖 `/app/ui`** —— 拉新镜像后重跑一次 `sudo bash install.sh` 即可。补丁只改容器内
+> 静态文件，不碰二进制、不碰数据卷；卸载时恢复备份的 `index.html`。
+
 ## 账号记录长什么样
 
 `authorize` 返回的 secret 是 **oauth 型**，不是死 Key：
@@ -240,6 +272,8 @@ ssoSessionId=…; sso_sessionid=…; account_id=…; token=…        ← Cookie
 9. 扫码取码 / 轮询两条 SSO 请求**不带 Cookie、不带 clientType/studioVersion**，只有 `Accept: application/json` 与 `User-Agent`；账号面请求才带 Cookie 与身份头。
 10. 手机验证码的**发码**与账号密码登录都卡在极验滑块上：极验只有宿主能渲染（wasm 包的 `login.captcha.geetest`），脚本宿主没有这个能力，所以发码要用户自己在 AStudio 客户端做，账号密码登录这条不提供。
 11. **`github:` 安装走的是官方 CDN 中转，不是直连 GitHub**：宿主 `script/website.rs:35-47` 把 `api.github.com/repos/*/commits` 与 `codeload.github.com/*/tar.gz` 换成 `agent2api.dev/api/plugins/community/github-commits|github-archive`。那个中转会限流，实测返回 `429 {"error":"社区插件来源暂时限流，请稍后再试"}`（此时直连 GitHub 是 200）。碰上就隔几分钟重试，或改用下面的 `file:` 路径安装 —— 与仓库内容无关。
+12. **二维码弹窗是宿主侧补丁，不是插件能力**：面板怎么展示 `authUrl` 由编译进二进制的桥接脚本决定（`web_shim.rs:1206-1225` 的 `window.open("about:blank","_blank")`），插件无法影响。`host-patch/` 覆盖 `window.open` 把「图片 URL」改画成面板内弹窗；**镜像升级会覆盖 `/app/ui`**，升级后要重跑 `sudo bash install.sh`。
+13. 动态登录流程里宿主的超时是 **5 分钟**（壳 `LOGIN_TIMEOUT`），比二维码的 60 秒长得多 —— 过期提示是插件自己按 `expires_at` 判的，宿主不会替你关窗口。
 
 ## 开发
 
