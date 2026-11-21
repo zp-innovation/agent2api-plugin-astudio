@@ -3,7 +3,7 @@
 AStudio（讯飞星辰 Agent Studio）作为 [agent2api](https://github.com/zp-innovation/agent2api) / magpie provider：**微信扫码登录 + Responses 协议对话 + 模型目录 + 积分余额 + 每日登录签到**。
 
 > Provider id: `astudio`　对话: `https://astronstudio-api-volces-prod.xf-yun.com/model-gateway/v1`　账号面: `https://agent.xfyun.cn/xingchen-studio/`
-> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.5.0`
+> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.6.0`
 
 ---
 
@@ -77,17 +77,19 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 | # | 方式 | 类型 | 需要什么 | 说明 |
 | --- | --- | --- | --- | --- |
 | 0 | 微信扫码登录 | `oauth` | 微信 + **已绑定星辰账号** | 推荐。落 oauth 账号，可读余额、可签到 |
-| 1 | 手机验证码登录 | `oauth` | 手机号 + 短信验证码 | 点按钮会打开 AStudio 登录页：滑块在那儿做，验证码粘回面板 |
-| 2 | 粘贴模型凭据 | `api` | `modelBearerToken` | 救急用：能对话，但**没有会话** ⇒ 余额/签到读不到 |
-| 3 | 导入凭据 JSON | `oauth` | 含 `ssoSessionId`/`account_id` 的 JSON 或 Cookie 串 | 把别处的登录态搬过来 |
-| 4 | 导入本机登录态 | `oauth` | 网关本机的会话文件或目录 | 同上，但自己去读文件；跨机部署用不了 |
+| 1 | 手机验证码登录 | `oauth` | 手机号 | 点按钮会打开 AStudio 登录页：滑块在那儿做，验证码粘回面板 |
+| 2 | 手机验证码（已收到码） | `oauth` | 手机号 + 短信验证码 | 不开窗口、不弹粘贴框，一次提交完成；码要你先去网页里取 |
+| 3 | 粘贴模型凭据 | `api` | `modelBearerToken` | 救急用：能对话，但**没有会话** ⇒ 余额/签到读不到 |
+| 4 | 导入凭据 JSON | `oauth` | 含 `ssoSessionId`/`account_id` 的 JSON 或 Cookie 串 | 把别处的登录态搬过来 |
+| 5 | 导入本机登录态 | `oauth` | 网关本机的会话文件或目录 | 同上，但自己去读文件；跨机部署用不了 |
 
 除「粘贴模型凭据」外都是 `type: "oauth"` —— 宿主 `login.mjs:41` 只肯为 oauth 型方法跑
 `authorize`，而 `host/login.mjs:27` 又只保留 oauth/api 两种类型，所以「输入框 + 后台换凭据」
 这条路必须挂在 oauth 上。
 
-不开窗口的（`browserMode: "none"` ⇒ url 为空 ⇒ 客户端走 auto ⇒ 点按钮即完成）是**导入类两条**。
-手机验证码是唯一一条「开窗口 + 收回执」的：`browserMode: "external"` 让宿主打开登录页，
+不开窗口的（`browserMode: "none"` ⇒ url 为空 ⇒ 客户端走 auto ⇒ 点按钮即完成）是**导入类两条**与
+**手机验证码（已收到码）**。
+「手机验证码登录」是唯一一条「开窗口 + 收回执」的：`browserMode: "external"` 让宿主打开登录页，
 `authorize` 返回 `method: "code"` 让宿主再弹一个一次性输入框
 （`login-policy.mjs:128-129`：`manualCallback = authorization.method === "code"`、
 `callbackInput = "code"`），验证码就从那个框回到插件。
@@ -138,20 +140,34 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 | `POST login/phone-quick-login`（假验证码，**不带极验**） | `{"flag":false,"code":10501002,"desc":"验证码无效，请重新获取并验证"}` |
 
 也就是说：**发码**这一步必须由能跑极验的地方完成，**登录**这一步（`phone-quick-login`）不要滑块。
-所以这条方法做成两段：
+所以取码只能由你在网页里做，取到码之后有两条提交路径：
+
+**A.「手机验证码登录」——宿主开网页 + 一次性粘贴框**
 
 1. 面板里只填**手机号**，点「登录并添加」；
 2. 宿主打开 <https://agent.xfyun.cn/studio-portal/overview>（AStudio 门户首页，未登录会自动弹出
-   「手机号登录 / 账号登录」模态框），用户在那里填手机号 → **勾选协议** → 点「获取验证码」→ 拖滑块；
-3. 面板同时（10 秒后）弹出一个输入框，标题是「需要粘贴授权令牌或 code」——**那里就填短信验证码**；
+   「手机号登录 / 账号登录」模态框），你在那里填手机号 → **勾选协议** → 点「获取验证码」→ 拖滑块；
+3. 面板同时（10 秒后）弹出一个输入框，标题是「需要粘贴授权令牌或 code」——**那里只填短信里的 4-8 位数字**；
 4. 插件拿到验证码后调 `login/phone-quick-login` 完成登录、落账号。
 
-> 为什么不用「手机号 + 验证码」两个输入框直接提交：面板的必填校验发生在插件被调用**之前**，
-> 验证码空着点提交只会得到「添加失败 请填写 短信验证码」；而且插件根本没有发短信的能力，
-> 用户虽然填了两个框，短信也没人发。改成两段之后，滑块和收短信都落在唯一能做它们的网页里。
+> ⚠️ 那个框**不要**填网页地址、也不要填手机号。宿主自己的覆盖层文案对「非 code 型」流程写的是
+> 「复制浏览器地址栏中的完整回调地址粘贴提交」，很容易让人以为登录完要把地址栏交上来 ——
+> 而 `core/login.rs:820-830` 会把整条地址原样当成 code 交给插件，这一次登录就白费了。
+> 插件现在会认出来并直接说「你粘进来的是网页地址，不是短信验证码」；顺带也接受带
+> `?code=` 的回调地址。
 
-> 代价：宿主的回调是**一次性的**（`login.mjs:126-133` 只 `run` 一次），验证码填错要重新点
+**B.「手机验证码（已收到码）」——不开窗口、不弹框，一次提交**
+
+1. 你自己先打开 <https://agent.xfyun.cn/studio-portal/overview>，用手机号取一次码（勾协议 → 获取验证码 → 滑块）；
+2. 回到面板，填**手机号 + 短信验证码**两个框，点「登录并添加」，直接完成。
+
+> B 是 0.6.0 新增的：`method: "auto"` + `browserMode: "none"` ⇒ 宿主不建窗口、不弹粘贴框，
+> 点按钮时把两个输入框的内容交给插件，插件立刻调 `phone-quick-login`。这条路上没有任何
+> 「回调地址」的概念，也就不会踩上面那个坑。
+
+> 代价：A 的回调是**一次性的**（`login.mjs:126-133` 只 `run` 一次），验证码填错要重新点
 > 「登录并添加」再取一次码。所以填的内容不是 4-8 位数字时先在本地拦下，不浪费那次机会。
+> B 没有这个限制，填错重填一次即可（但每次都要重新取码，码是一次性的）。
 > ⚠️ 登录页地址是 **`/studio-portal/overview`**，不是 `/login`。门户是挂在 `/studio-portal` 下的
 > SPA，路由表里只有 `/`、`/overview`、`/studio-price`、`/studio-download` 等和一个 `*` 兜底；
 > 登录不是独立路由，而是未登录时自动弹出的模态框。`/login` 会命中兜底渲染「404 页面不存在」，
@@ -309,16 +325,17 @@ sudo bash install.sh uninstall # 还原
 7. **粘贴方式没有会话**，所以余额 / 签到不可用，面板会明说「只有模型凭据（没有网页会话）」，不假装读到了数字。
 8. **`studioVersion` 参与门控**：客户端版本 3.4.4 的目录只有 7 条，3.6.0 起 8 条。请求头必须带 `clientType`/`studioVersion`/`User-Agent: AStudio/3.6.0`，否则目录会被裁。
 9. 扫码取码 / 轮询两条 SSO 请求**不带 Cookie、不带 clientType/studioVersion**，只有 `Accept: application/json` 与 `User-Agent`；账号面请求才带 Cookie 与身份头。
-10. 手机验证码的**发码**与账号密码登录都卡在极验滑块上：极验只有宿主能渲染（wasm 包的 `login.captcha.geetest`），脚本宿主既画不出滑块也发不出短信，所以发码要用户在打开的 AStudio 网页登录页里自己完成（滑块 + 点「获取验证码」），验证码再由宿主的一次性输入框粘回插件；账号密码登录这条不提供。
-14. **验证码只有一次机会**：宿主的登录回调是一次性的（`login.mjs:126-133`），填错就得重新点「登录并添加」并重新取码；插件对非 4-8 位数字的粘贴在本地拦下，不消耗那次机会。
-11. **`github:` 安装走的是官方 CDN 中转，不是直连 GitHub**：宿主 `script/website.rs:35-47` 把 `api.github.com/repos/*/commits` 与 `codeload.github.com/*/tar.gz` 换成 `agent2api.dev/api/plugins/community/github-commits|github-archive`。那个中转会限流，实测返回 `429 {"error":"社区插件来源暂时限流，请稍后再试"}`（此时直连 GitHub 是 200）。碰上就隔几分钟重试，或改用下面的 `file:` 路径安装 —— 与仓库内容无关。
-12. **二维码弹窗是宿主侧补丁，不是插件能力**：面板怎么展示 `authUrl` 由编译进二进制的桥接脚本决定（`web_shim.rs:1206-1225` 的 `window.open("about:blank","_blank")`），插件无法影响。`host-patch/` 覆盖 `window.open` 把「图片 URL」改画成面板内弹窗；**镜像升级会覆盖 `/app/ui`**，升级后要重跑 `sudo bash install.sh`。
-13. 动态登录流程里宿主的超时是 **5 分钟**（壳 `LOGIN_TIMEOUT`），比二维码的 60 秒长得多 —— 过期提示是插件自己按 `expires_at` 判的，宿主不会替你关窗口。
+10. 手机验证码的**发码**与账号密码登录都卡在极验滑块上：极验只有宿主能渲染（wasm 包的 `login.captcha.geetest`），脚本宿主既画不出滑块也发不出短信，所以发码要用户在打开的 AStudio 网页登录页里自己完成（滑块 + 点「获取验证码」）。取到码之后两条路：开网页那条（方法 1）靠宿主的一次性粘贴框收码；「已收到码」那条（方法 2）在 start 时就把码填好，不开窗口也不弹框。账号密码登录这条不提供。
+11. **粘贴框只认短信里的数字**：宿主 `core/login.rs:820-830` 会把提交内容整条当 code 交给插件（URL 里带 `code`/`authorization_code` 才会先被摘出来），所以粘地址栏只会白费这一次登录。插件按提交内容分别回「这是网页地址」/「这是手机号」/「里面没有 4-8 位验证码」，并顺带接受带 `?code=` 的回调地址。
+12. **方法 1 的验证码只有一次机会**：宿主的登录回调是一次性的（`login.mjs:126-133`），填错就得重新点「登录并添加」并重新取码；插件对非 4-8 位数字的粘贴在本地拦下，不消耗那次机会。方法 2 可以重填（但码本身是一次性的，重填也要重新取码）。
+13. **`github:` 安装走的是官方 CDN 中转，不是直连 GitHub**：宿主 `script/website.rs:35-47` 把 `api.github.com/repos/*/commits` 与 `codeload.github.com/*/tar.gz` 换成 `agent2api.dev/api/plugins/community/github-commits|github-archive`。那个中转会限流，实测返回 `429 {"error":"社区插件来源暂时限流，请稍后再试"}`（此时直连 GitHub 是 200）。碰上就隔几分钟重试，或改用下面的 `file:` 路径安装 —— 与仓库内容无关。
+14. **二维码弹窗是宿主侧补丁，不是插件能力**：面板怎么展示 `authUrl` 由编译进二进制的桥接脚本决定（`web_shim.rs:1206-1225` 的 `window.open("about:blank","_blank")`），插件无法影响。`host-patch/` 覆盖 `window.open` 把「图片 URL」改画成面板内弹窗；**镜像升级会覆盖 `/app/ui`**，升级后要重跑 `sudo bash install.sh`。
+15. 动态登录流程里宿主的超时是 **5 分钟**（壳 `LOGIN_TIMEOUT`），比二维码的 60 秒长得多 —— 过期提示是插件自己按 `expires_at` 判的，宿主不会替你关窗口。
 
 ## 开发
 
 ```bash
-node --test "test/*.test.mjs"     # 66 条：协议常量、SSO 状态机、五种登录方式、验证码解析、目录合并、登录/续期/余额/签到全链路、老账号升级
+node --test "test/*.test.mjs"     # 70 条：协议常量、SSO 状态机、六种登录方式、验证码解析、目录合并、登录/续期/余额/签到全链路、老账号升级
 python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 assets/icon.png 与 icon.mjs
 ```
 
@@ -330,7 +347,7 @@ python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 
 | `lib/endpoints.mjs` | 上游地址与常量（版本号、TTL、轮询间隔、兜底模型名） |
 | `lib/http.mjs` | 信封解析、Cookie 头、身份头、超时、错误分类（`failed`/`expired`） |
 | `lib/scan.mjs` | SSO 取码 / 轮询、提示文案状态机 |
-| `lib/login.mjs` | 四种 `authorize`：扫码、手机验证码、凭据 JSON、本机登录态 |
+| `lib/login.mjs` | 五种 `authorize`：扫码、手机验证码（开网页 + 粘码）、手机验证码（先取码再填）、凭据 JSON、本机登录态 |
 | `lib/import.mjs` | 凭据解析（Cookie 串 / JSON / 嵌套 secret）与本机文件、目录读取 |
 | `lib/session.mjs` | 会话与凭据（`settle` / `accountSecret` / `renew`） |
 | `lib/legacy.mjs` | 把 wasm 时代落盘的 api 型 secret 升级成 oauth 型（先验会话，换到新凭据才写盘） |

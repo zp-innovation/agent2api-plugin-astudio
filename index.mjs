@@ -8,11 +8,13 @@
  * （余额/签到/目录/换凭据用）。凭据到期由 hooks.auth.refresh 用会话重铸，不必重新扫码。
  */
 import { ICON } from "./icon.mjs";
-import { API_BASE, PROVIDER_ID } from "./lib/endpoints.mjs";
+import { API_BASE, LOGIN_PAGE_URL, PROVIDER_ID } from "./lib/endpoints.mjs";
 import { checkinReport } from "./lib/checkin.mjs";
 import { desktopHeaders, describe } from "./lib/http.mjs";
 import { upgradeLegacy } from "./lib/legacy.mjs";
-import { authorizeCredential, authorizeLocal, authorizeScan, authorizeSms, authorizeToken } from "./lib/login.mjs";
+import {
+  authorizeCredential, authorizeLocal, authorizeScan, authorizeSms, authorizeSmsForm, authorizeToken, useLoginLogger,
+} from "./lib/login.mjs";
 import { modelCatalog, pluginConfig } from "./lib/provider.mjs";
 import { keyOf, renew } from "./lib/session.mjs";
 import { usageReport } from "./lib/usage.mjs";
@@ -43,6 +45,20 @@ const METHODS = [
     manualCallback: true,
     callbackInput: "code",
     authorize: authorizeSms,
+  },
+  {
+    type: "oauth",
+    label: "手机验证码（已收到码）",
+    instructions: `先自己打开 ${LOGIN_PAGE_URL} 取一次码：填手机号 → 勾选「已同意《服务协议》和《隐私协议》」→ 点「获取验证码」并拖动滑块。拿到短信里的 4-8 位数字后，回到面板把它填进「短信验证码」，点「登录并添加」即可。这条不开网页窗口、也不弹粘贴框，一次提交就完成登录。`,
+    prompts: [
+      { key: "mobile", label: "手机号", placeholder: "18122032590", secret: false },
+      { key: "code", label: "短信验证码", placeholder: "短信里的 4-8 位数字", secret: false },
+    ],
+    browserMode: "none",
+    embeddedOnly: false,
+    localOnly: false,
+    manualCallback: false,
+    authorize: authorizeSmsForm,
   },
   {
     type: "api",
@@ -83,6 +99,7 @@ export async function AStudioPlugin({ client } = {}) {
   const log = (message, level = "info") => {
     Promise.resolve(client?.app?.log?.({ message, level })).catch(() => {});
   };
+  useLoginLogger(log);
 
   /** 对话出网时注入 Bearer 与 AStudio 的身份头（版本头参与服务端门控）。 */
   const loader = async (readAuth) => {

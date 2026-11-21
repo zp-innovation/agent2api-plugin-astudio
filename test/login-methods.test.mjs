@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  authorizeCredential, authorizeLocal, authorizeSms, smsCodeOf, splitPhone,
+  authorizeCredential, authorizeLocal, authorizeSms, authorizeSmsForm, codeFromUrl, smsCodeOf, splitPhone,
+  submissionHint,
 } from "../lib/login.mjs";
 import { LOGIN_PAGE_URL } from "../lib/endpoints.mjs";
 import { cookieFields, credentialOf, looksLikePath, parseJson } from "../lib/import.mjs";
@@ -116,6 +117,81 @@ test("a whole SMS body still yields the six-digit code", () => {
   assert.equal(smsCodeOf("not a code"), "");
   assert.equal(smsCodeOf("1234567890123"), "");
   assert.equal(smsCodeOf(""), "");
+});
+
+test("pasting the page address is answered as an address, not as a bad code", async () => {
+  const world = stub({});
+  try {
+    const authorization = await authorizeSms({ mobile: "18122032590" }, {});
+    // 宿主 shim 对非 code 型流程的文案是「复制浏览器地址栏中的完整回调地址粘贴提交」，
+    // 用户照做就会把 overview 地址交上来；core/login.rs 会把它整条当成 code 传进来。
+    const result = await authorization.callback("https://agent.xfyun.cn/studio-portal/overview");
+    assert.equal(result.type, "failed");
+    assert.match(result.error, /网页地址/);
+    assert.match(result.error, /4-8 位数字/);
+    // 手机号同理：11 位数字不是验证码
+    const phone = await authorization.callback("18122032590");
+    assert.match(phone.error, /手机号/);
+    assert.equal(world.calls.length, 0);
+  } finally {
+    world.restore();
+  }
+});
+
+test("a code carried inside a callback URL is still accepted", async () => {
+  const world = stub({
+    "POST /xingchen-studio/login/phone-quick-login": ok({
+      account_id: "22098822931", ssoSessionId: "sid-u", token: "tok-u", uid: 22098822931,
+    }),
+    ...SETTLE,
+  });
+  try {
+    assert.equal(codeFromUrl("https://agent.xfyun.cn/studio-portal/overview?code=123456"), "123456");
+    assert.equal(codeFromUrl("https://agent.xfyun.cn/studio-portal/overview"), "");
+    assert.equal(codeFromUrl("123456"), "");
+    const authorization = await authorizeSms({ mobile: "18122032590" }, {});
+    const result = await authorization.callback("https://agent.xfyun.cn/studio-portal/overview?code=123456");
+    assert.equal(result.type, "success");
+    const login = world.calls.find((call) => call.key === "POST /xingchen-studio/login/phone-quick-login");
+    assert.equal(login.body, "mobile=18122032590&verifyCode=123456&countryCode=86");
+  } finally {
+    world.restore();
+  }
+});
+
+test("the two-field sms method needs no window and signs in in one submit", async () => {
+  const world = stub({
+    "POST /xingchen-studio/login/phone-quick-login": ok({
+      account_id: "22098822931", ssoSessionId: "sid-f2", token: "tok-f2", uid: 22098822931,
+    }),
+    ...SETTLE,
+  });
+  try {
+    const noCode = await authorizeSmsForm({ mobile: "18122032590" }, {});
+    assert.equal(noCode.type, "failed");
+    assert.match(noCode.error, /验证码/);
+    assert.equal(world.calls.length, 0);
+
+    const authorization = await authorizeSmsForm({ mobile: "18122032590", code: "123456" }, {});
+    // method:"auto" + 不返回 url ⇒ 宿主不建窗口、不弹粘贴框，start 之后立刻跑 callback
+    assert.equal(authorization.method, "auto");
+    assert.equal(authorization.url, "");
+    const result = await authorization.callback(undefined);
+    assert.equal(result.type, "success");
+    assert.equal(result.source, "sms");
+    assert.equal(result.access, "bearer-sms");
+    assert.equal(result.session.ssoSessionId, "sid-f2");
+  } finally {
+    world.restore();
+  }
+});
+
+test("submission hints name what the user actually pasted", () => {
+  const phone = splitPhone("18122032590");
+  assert.match(submissionHint("", phone), /没有收到验证码/);
+  assert.match(submissionHint("http://x.test/a?b=1", phone), /网页地址/);
+  assert.match(submissionHint("18122032590", phone), /手机号/);
+  assert.match(submissionHint("这是一段话", phone), /4-8 位验证码/);
 });
 
 test("a rejected verification code comes back as the upstream reason", async () => {

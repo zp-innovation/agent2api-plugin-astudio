@@ -23,8 +23,8 @@ test("the factory survives being called the way entries.mjs probes candidates", 
 test("sign-in methods are exactly what the panel can render", () => {
   const methods = hooks.auth.methods;
   assert.ok(Array.isArray(methods));
-  assert.equal(methods.length, 5);
-  const [scan, sms, paste, credential, local] = methods;
+  assert.equal(methods.length, 6);
+  const [scan, sms, smsForm, paste, credential, local] = methods;
   assert.equal(scan.type, "oauth");
   assert.equal(scan.label, "微信扫码登录");
   assert.equal(typeof scan.authorize, "function");
@@ -55,6 +55,12 @@ test("sign-in methods are exactly what the panel can render", () => {
   assert.equal(sms.manualCallback, true);
   assert.equal(sms.callbackInput, "code");
   assert.deepEqual(sms.prompts.map((prompt) => prompt.key), ["mobile"]);
+  // 第二段：验证码在 start 时就填好，不开窗口、不弹粘贴框（method:"auto" + browserMode none）
+  assert.equal(smsForm.type, "oauth");
+  assert.equal(typeof smsForm.authorize, "function");
+  assert.equal(smsForm.browserMode, "none");
+  assert.equal(smsForm.manualCallback, false);
+  assert.deepEqual(smsForm.prompts.map((prompt) => prompt.key), ["mobile", "code"]);
   // host/login-prompts.mjs:5 的 key 规则 + promptSecret 的密文判定
   const keys = methods.flatMap((method) => method.prompts.map((prompt) => prompt.key));
   for (const key of keys) assert.match(key, /^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
