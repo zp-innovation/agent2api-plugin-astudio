@@ -236,11 +236,12 @@ test("checkin says so when the reward is not observable yet", async () => {
     "GET /xingchen-studio/membership/plan-config": ok({ dailyLoginEnabled: true }),
     "GET /xingchen-studio/points/balance": ok({ totalBalance: 100, sparkTotalBalance: 0 }),
     "POST /xingchen-studio/tenant-app/v2/init-app": ok({ banned: false }),
+    "GET /xingchen-studio/client-popups/pending": ok([]),
   });
   try {
     const report = await checkinReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
     assert.equal(report.outcome, "done");
-    assert.match(report.message, /未观测到新增积分/);
+    assert.match(report.message, /今天已经领过/);
   } finally {
     world.restore();
   }

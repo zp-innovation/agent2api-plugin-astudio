@@ -3,7 +3,7 @@
 AStudio（讯飞星辰 Agent Studio）作为 [agent2api](https://github.com/zp-innovation/agent2api) / magpie provider：**微信扫码登录 + Responses 协议对话 + 模型目录 + 积分余额 + 每日登录签到**。
 
 > Provider id: `astudio`　对话: `https://astronstudio-api-volces-prod.xf-yun.com/model-gateway/v1`　账号面: `https://agent.xfyun.cn/xingchen-studio/`
-> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.4.0`
+> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.5.0`
 
 ---
 
@@ -257,15 +257,22 @@ sudo bash install.sh uninstall # 还原
 
 读不到时不会染红整列：带 `plan` 的返回会被 `host/reports.mjs:29` 降级成 warnings 里的一条提示。
 
-**签到**：`checkin` 先读一次积分 → `POST tenant-app/v2/init-app`（官方每日登录就是这一步）→ 等 2.5 秒再读一次，用**实际到账的差额**报告结果：
+**签到**：`checkin` 读一次积分 → `POST tenant-app/v2/init-app` → **领取推广位里的登录积分** → 等 2.5 秒再读一次积分，用实际差额报告结果。
+
+第三段是关键，0.5.0 才补上：`init-app` 只记录「今天登录过」，**不发积分**。积分在推广服务里，面板左下角「限时每日福利 · 今日可领 100 积分 · 领取」按钮发出的就是这条请求：
+
+1. `GET client-popups/pending` → 当天的 `DAILY_LOGIN_REWARD_V1`（`componentType: "DAILY_REWARD_DIALOG"`，`instanceKey` 是当天日期如 `20261121`）；
+2. `POST client-popups/complete {popupId, instanceKey, completed: true}` → 到账。
+
+实测（2026-11-21，账号 18122032590）：只调 `init-app`，余额 1300 一动不动；补一次 `complete`，2 秒后 1400。**所以以前「面板显示已签到、积分没到账」不是上游延迟，而是少调了这一步。** 这两个接口必须带 `clientType` + `studioVersion` 身份头，缺了上游回 `{"code":11001001,"desc":"客户端平台、版本或构建号无效"}`（Linux 容器里没有 `process.platform`，插件按官方 Windows 桌面端身份 `clientType: 21` 兜底）。
 
 | outcome | 什么时候 |
 | --- | --- |
-| `claimed` | 观测到新增积分，`credit` 形如「通用积分 +30」 |
-| `done` | 已执行，但两次读数没有差额（今日已领或尚未到账） |
+| `claimed` | 领到了：观测到新增积分（`credit` 形如「通用积分 +100」），或服务端已确认领取但余额读数还没刷新 |
+| `done` | 登录已完成，今天没有待领取的登录积分（已经领过） |
 | `inactive` | `membership/plan-config` 的 `dailyLoginEnabled` 为 false |
 | `ineligible` | 只有 Bearer、没有会话（粘贴方式登录的账号） |
-| `failed` | 上游拒绝或读数不完整 |
+| `failed` | 上游拒绝（含「登录成功但没领到登录积分」）、或读数不完整 |
 
 ## 模型目录
 
@@ -306,7 +313,7 @@ sudo bash install.sh uninstall # 还原
 ## 开发
 
 ```bash
-node --test "test/*.test.mjs"     # 62 条：协议常量、SSO 状态机、五种登录方式、验证码解析、目录合并、登录/续期/余额/签到全链路、老账号升级
+node --test "test/*.test.mjs"     # 66 条：协议常量、SSO 状态机、五种登录方式、验证码解析、目录合并、登录/续期/余额/签到全链路、老账号升级
 python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 assets/icon.png 与 icon.mjs
 ```
 
