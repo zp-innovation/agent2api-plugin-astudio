@@ -3,6 +3,7 @@
 AStudio（讯飞星辰 Agent Studio）作为 [agent2api](https://github.com/zp-innovation/agent2api) / magpie provider：**微信扫码登录 + Responses 协议对话 + 模型目录 + 积分余额 + 每日登录签到**。
 
 > Provider id: `astudio`　对话: `https://astronstudio-api-volces-prod.xf-yun.com/model-gateway/v1`　账号面: `https://agent.xfyun.cn/xingchen-studio/`
+> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.2.0`
 
 ---
 
@@ -188,11 +189,12 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 7. **粘贴方式没有会话**，所以余额 / 签到不可用，面板会明说「只有模型凭据（没有网页会话）」，不假装读到了数字。
 8. **`studioVersion` 参与门控**：客户端版本 3.4.4 的目录只有 7 条，3.6.0 起 8 条。请求头必须带 `clientType`/`studioVersion`/`User-Agent: AStudio/3.6.0`，否则目录会被裁。
 9. 扫码取码 / 轮询两条 SSO 请求**不带 Cookie、不带 clientType/studioVersion**，只有 `Accept: application/json` 与 `User-Agent`；账号面请求才带 Cookie 与身份头。
+10. **`github:` 安装走的是官方 CDN 中转，不是直连 GitHub**：宿主 `script/website.rs:35-47` 把 `api.github.com/repos/*/commits` 与 `codeload.github.com/*/tar.gz` 换成 `agent2api.dev/api/plugins/community/github-commits|github-archive`。那个中转会限流，实测返回 `429 {"error":"社区插件来源暂时限流，请稍后再试"}`（此时直连 GitHub 是 200）。碰上就隔几分钟重试，或改用下面的 `file:` 路径安装 —— 与仓库内容无关。
 
 ## 开发
 
 ```bash
-node --test "test/*.test.mjs"     # 31 条：协议常量、SSO 状态机、目录合并、登录/续期/余额/签到全链路
+node --test "test/*.test.mjs"     # 48 条：协议常量、SSO 状态机、目录合并、登录/续期/余额/签到全链路、老账号升级
 python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 assets/icon.png 与 icon.mjs
 ```
 
@@ -206,6 +208,7 @@ python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 
 | `lib/scan.mjs` | SSO 取码 / 轮询、提示文案状态机 |
 | `lib/login.mjs` | 两种登录方式的 `authorize` |
 | `lib/session.mjs` | 会话与凭据（`settle` / `accountSecret` / `renew`） |
+| `lib/legacy.mjs` | 把 wasm 时代落盘的 api 型 secret 升级成 oauth 型（先验会话，换到新凭据才写盘） |
 | `lib/catalog.mjs` | 两份目录的合并与兜底 |
 | `lib/provider.mjs` | 运行时模型清单与 `config` 写入 |
 | `lib/usage.mjs` / `lib/checkin.mjs` | 余额与签到 |
