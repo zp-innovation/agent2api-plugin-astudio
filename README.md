@@ -141,8 +141,8 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 所以这条方法做成两段：
 
 1. 面板里只填**手机号**，点「登录并添加」；
-2. 宿主打开 <https://agent.xfyun.cn/login>（AStudio 门户登录页，实测 200 / text/html），
-   用户在那里填手机号 → 拖滑块 → 点「获取验证码」；
+2. 宿主打开 <https://agent.xfyun.cn/studio-portal/overview>（AStudio 门户首页，未登录会自动弹出
+   「手机号登录 / 账号登录」模态框），用户在那里填手机号 → **勾选协议** → 点「获取验证码」→ 拖滑块；
 3. 面板同时（10 秒后）弹出一个输入框，标题是「需要粘贴授权令牌或 code」——**那里就填短信验证码**；
 4. 插件拿到验证码后调 `login/phone-quick-login` 完成登录、落账号。
 
@@ -152,6 +152,11 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 
 > 代价：宿主的回调是**一次性的**（`login.mjs:126-133` 只 `run` 一次），验证码填错要重新点
 > 「登录并添加」再取一次码。所以填的内容不是 4-8 位数字时先在本地拦下，不浪费那次机会。
+> ⚠️ 登录页地址是 **`/studio-portal/overview`**，不是 `/login`。门户是挂在 `/studio-portal` 下的
+> SPA，路由表里只有 `/`、`/overview`、`/studio-price`、`/studio-download` 等和一个 `*` 兜底；
+> 登录不是独立路由，而是未登录时自动弹出的模态框。`/login` 会命中兜底渲染「404 页面不存在」，
+> `/studio-portal/login` 一样，`/xingchen-studio(/login)` 则是接口命名空间（直接回 80000）。
+> 另外弹窗要求先勾选「已同意《服务协议》和《隐私协议》」，「获取验证码」才会弹滑块。
 
 （同一形态在宿主里有先例：`login-policy.mjs:19-34` 给 wps-lingxi 造的「内嵌窗口登录」就是
 `{url: WPS_SITE, method: "code", callback(cookie)}`。）

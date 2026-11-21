@@ -54,7 +54,8 @@ test("sms sign-in opens the AStudio login page and waits for a pasted code", asy
     // login-policy.mjs:128-129 —— method:"code" 会让宿主弹出一次性 code 输入框
     assert.equal(authorization.method, "code");
     assert.equal(authorization.url, LOGIN_PAGE_URL);
-    assert.match(authorization.url, /^https:\/\/agent\.xfyun\.cn\/login$/);
+    // 门户 SPA 的路由表里没有 /login（会落到 "*" 兜底渲染 404），登录是 overview 上自动弹出的模态框
+    assert.match(authorization.url, /^https:\/\/agent\.xfyun\.cn\/studio-portal\/overview$/);
     assert.equal(typeof authorization.callback, "function");
     assert.match(authorization.instructions, /获取验证码/);
     assert.equal(world.calls.length, 0);
@@ -98,7 +99,7 @@ test("sms sign-in refuses a missing phone or an empty paste without touching the
     assert.equal(empty.type, "failed");
     assert.match(empty.error, /验证码/);
     // 用户把授权地址粘进框里时不能拿它去换登录，也不能消耗掉那次机会
-    const wrong = await authorization.callback("https://agent.xfyun.cn/login");
+    const wrong = await authorization.callback("https://agent.xfyun.cn/studio-portal/overview");
     assert.equal(wrong.type, "failed");
     assert.match(wrong.error, /验证码/);
     assert.equal(world.calls.length, 0);
