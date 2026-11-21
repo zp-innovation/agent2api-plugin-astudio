@@ -12,7 +12,7 @@ import { API_BASE, PROVIDER_ID } from "./lib/endpoints.mjs";
 import { checkinReport } from "./lib/checkin.mjs";
 import { desktopHeaders, describe } from "./lib/http.mjs";
 import { upgradeLegacy } from "./lib/legacy.mjs";
-import { authorizeScan, authorizeToken } from "./lib/login.mjs";
+import { authorizeCredential, authorizeLocal, authorizeScan, authorizeSms, authorizeToken } from "./lib/login.mjs";
 import { modelCatalog, pluginConfig } from "./lib/provider.mjs";
 import { keyOf, renew } from "./lib/session.mjs";
 import { usageReport } from "./lib/usage.mjs";
@@ -31,6 +31,19 @@ const METHODS = [
     authorize: authorizeScan,
   },
   {
+    type: "oauth",
+    label: "手机验证码登录",
+    instructions: "用手机号 + 短信验证码登录。验证码请先在 AStudio 官方客户端的「手机短信登录」里获取：上游发码强制极验滑块，脚本插件渲染不了滑块，所以发码这一步只能由你完成，登录本身由插件完成。",
+    prompts: [
+      { key: "mobile", label: "手机号", placeholder: "18122032590", secret: false },
+      { key: "code", label: "短信验证码", placeholder: "6 位数字", secret: false },
+    ],
+    browserMode: "none",
+    embeddedOnly: false,
+    localOnly: false,
+    authorize: authorizeSms,
+  },
+  {
     type: "api",
     label: "粘贴模型凭据",
     instructions: "从浏览器里复制 AStudio 的 modelBearerToken（Bearer Token）。这条只用于临时救急：没有网页会话，余额与签到读不到。",
@@ -38,6 +51,30 @@ const METHODS = [
       { key: "key", label: "modelBearerToken", placeholder: "粘贴 modelBearerToken", secret: true },
     ],
     authorize: authorizeToken,
+  },
+  {
+    type: "oauth",
+    label: "导入凭据 JSON",
+    instructions: "粘贴一段凭据：含 ssoSessionId / account_id 的 JSON（AStudio 客户端的登录态）、{\"modelBearerToken\": \"…\"}，或直接粘 Cookie 串（ssoSessionId=…; account_id=…）。有会话时会先换一次模型凭据来验证会话是否还有效。",
+    prompts: [
+      { key: "json", label: "凭据 JSON 或 Cookie", placeholder: '{"ssoSessionId":"…","account_id":"…"}', secret: false },
+    ],
+    browserMode: "none",
+    embeddedOnly: false,
+    localOnly: false,
+    authorize: authorizeCredential,
+  },
+  {
+    type: "oauth",
+    label: "导入本机登录态",
+    instructions: "填网关这台电脑上 AStudio 客户端的会话文件路径（填目录也行，插件会在两层内找出认得出的那个文件）。跨机部署时网关本机没有这个文件，请改用「导入凭据 JSON」粘贴。",
+    prompts: [
+      { key: "path", label: "本机会话文件或目录", placeholder: "C:\\Users\\Administrator\\AppData\\Roaming\\AStudio", secret: false },
+    ],
+    browserMode: "none",
+    embeddedOnly: false,
+    localOnly: false,
+    authorize: authorizeLocal,
   },
 ];
 

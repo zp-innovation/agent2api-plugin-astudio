@@ -76,8 +76,16 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 
 | # | 方式 | 类型 | 需要什么 | 说明 |
 | --- | --- | --- | --- | --- |
-| 0 | 微信扫码登录 | `oauth` | 微信 + **已绑定星辰账号** | 推荐。登录后可读余额、可签到 |
-| 1 | 粘贴模型凭据 | `api` | `modelBearerToken` | 救急用：能对话，但**没有会话** ⇒ 余额/签到读不到 |
+| 0 | 微信扫码登录 | `oauth` | 微信 + **已绑定星辰账号** | 推荐。落 oauth 账号，可读余额、可签到 |
+| 1 | 手机验证码登录 | `oauth` | 手机号 + 短信验证码 | 验证码要你自己在 AStudio 客户端取，原因见下 |
+| 2 | 粘贴模型凭据 | `api` | `modelBearerToken` | 救急用：能对话，但**没有会话** ⇒ 余额/签到读不到 |
+| 3 | 导入凭据 JSON | `oauth` | 含 `ssoSessionId`/`account_id` 的 JSON 或 Cookie 串 | 把别处的登录态搬过来 |
+| 4 | 导入本机登录态 | `oauth` | 网关本机的会话文件或目录 | 同上，但自己去读文件；跨机部署用不了 |
+
+除「粘贴模型凭据」外都是 `type: "oauth"` —— 宿主 `login.mjs:41` 只肯为 oauth 型方法跑
+`authorize`，而 `host/login.mjs:27` 又只保留 oauth/api 两种类型，所以「输入框 + 后台换凭据」
+这条路必须挂在 oauth 上，用 `browserMode: "none"` 让它不开窗口（url 为空 ⇒ 客户端走 auto ⇒
+点按钮即完成）。
 
 ### 扫码这条的交互
 
@@ -109,6 +117,47 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 ```
 
 二维码图片落在 `mp.weixin.qq.com`，正是「公网 HTTPS 图片」这条路成立的原因。
+
+### 手机验证码这条：验证码要你自己取
+
+上游 `login/mobile/send-verify-code`（发短信）与 `login/check-account`（账号密码）都强制要极验滑块三件
+（`geetest_challenge` / `geetest_validate` / `geetest_seccode`），而极验只有宿主能渲染 —— wasm 包靠
+`login.captcha.geetest` 能力，**脚本宿主里一个 captcha 字样都没有**（`plugin_host/script/` 全目录只有
+`reports.mjs:43` 的签到 outcome 白名单里出现过 "captcha"）。实测（2026-11-21）：
+
+| 请求 | 结果 |
+| --- | --- |
+| `POST login/mobile/send-verify-code`（不带极验） | `{"flag":false,"code":19901001,"desc":"参数无效"}` |
+| `POST login/mobile/send-verify-code`（带假极验） | `{"flag":true,"code":20009,"desc":"geetest verify failed"}` |
+| `POST login/check-account`（同上两种） | 同上两种结果 |
+| `POST login/phone-quick-login`（假验证码，**不带极验**） | `{"flag":false,"code":10501002,"desc":"验证码无效，请重新获取并验证"}` |
+
+也就是说：**发码**这一步必须由能跑极验的地方完成（AStudio 官方客户端的「手机短信登录」），
+**登录**这一步（`phone-quick-login`）不要滑块。所以这条方法的形状是「你取码 + 插件换凭据」。
+
+### 为什么没有「账号密码登录」
+
+`login/check-account` 是唯一的密码入口，它**强制**极验（上表第 3 行），没有别的免滑块路径 ——
+盲试的 7 个常见路径（`login/account-login`、`login/password-login` 等）全部回该站对未知路径的
+通用信封 `{"code":80000,"flag":false,"desc":"登录异常，请重新登录"}`。geetest v3 的离线兜底公式
+（`validate = md5(md5(challenge)) + "|jordan"`，`seccode = validate + "|jordan"`）三种变体也全部被判
+`20009`，说明上游是在线校验、绕不过去。所以这条**不做**：宁可少一个点不动的 tab，也不做一个
+点了必然失败的按钮。
+
+### 导入凭据 / 导入本机登录态
+
+两条共用一个解析器（`lib/import.mjs`），认三种输入：
+
+```text
+ssoSessionId=…; sso_sessionid=…; account_id=…; token=…        ← Cookie 串
+{"modelBearerToken": "eyJ0eXAi…"}                              ← 只要凭据
+{"access": "eyJ…", "session": {"accountId": "…", "ssoSessionId": "…"}}  ← 本插件自己落盘的 secret
+```
+
+有会话（`ssoSessionId` + `account_id`）就先换一次模型凭据，换得到才落账号 —— 顺带证明会话还活着；
+只有 `modelBearerToken` 时退成 api 型账号（能对话，读不到余额）。「导入本机登录态」多一层：
+输入可以是文件，也可以是**目录**，插件在两层内（最多 80 个 ≤512 KiB 的候选文件）找第一个认得出
+会话的文件。它读的是**网关这台机器**的磁盘，跨机部署时网关本机没有 AStudio 客户端，请改用粘贴。
 
 ## 账号记录长什么样
 
@@ -189,12 +238,13 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 7. **粘贴方式没有会话**，所以余额 / 签到不可用，面板会明说「只有模型凭据（没有网页会话）」，不假装读到了数字。
 8. **`studioVersion` 参与门控**：客户端版本 3.4.4 的目录只有 7 条，3.6.0 起 8 条。请求头必须带 `clientType`/`studioVersion`/`User-Agent: AStudio/3.6.0`，否则目录会被裁。
 9. 扫码取码 / 轮询两条 SSO 请求**不带 Cookie、不带 clientType/studioVersion**，只有 `Accept: application/json` 与 `User-Agent`；账号面请求才带 Cookie 与身份头。
-10. **`github:` 安装走的是官方 CDN 中转，不是直连 GitHub**：宿主 `script/website.rs:35-47` 把 `api.github.com/repos/*/commits` 与 `codeload.github.com/*/tar.gz` 换成 `agent2api.dev/api/plugins/community/github-commits|github-archive`。那个中转会限流，实测返回 `429 {"error":"社区插件来源暂时限流，请稍后再试"}`（此时直连 GitHub 是 200）。碰上就隔几分钟重试，或改用下面的 `file:` 路径安装 —— 与仓库内容无关。
+10. 手机验证码的**发码**与账号密码登录都卡在极验滑块上：极验只有宿主能渲染（wasm 包的 `login.captcha.geetest`），脚本宿主没有这个能力，所以发码要用户自己在 AStudio 客户端做，账号密码登录这条不提供。
+11. **`github:` 安装走的是官方 CDN 中转，不是直连 GitHub**：宿主 `script/website.rs:35-47` 把 `api.github.com/repos/*/commits` 与 `codeload.github.com/*/tar.gz` 换成 `agent2api.dev/api/plugins/community/github-commits|github-archive`。那个中转会限流，实测返回 `429 {"error":"社区插件来源暂时限流，请稍后再试"}`（此时直连 GitHub 是 200）。碰上就隔几分钟重试，或改用下面的 `file:` 路径安装 —— 与仓库内容无关。
 
 ## 开发
 
 ```bash
-node --test "test/*.test.mjs"     # 48 条：协议常量、SSO 状态机、目录合并、登录/续期/余额/签到全链路、老账号升级
+node --test "test/*.test.mjs"     # 58 条：协议常量、SSO 状态机、五种登录方式、目录合并、登录/续期/余额/签到全链路、老账号升级
 python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 assets/icon.png 与 icon.mjs
 ```
 
@@ -206,7 +256,8 @@ python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 
 | `lib/endpoints.mjs` | 上游地址与常量（版本号、TTL、轮询间隔、兜底模型名） |
 | `lib/http.mjs` | 信封解析、Cookie 头、身份头、超时、错误分类（`failed`/`expired`） |
 | `lib/scan.mjs` | SSO 取码 / 轮询、提示文案状态机 |
-| `lib/login.mjs` | 两种登录方式的 `authorize` |
+| `lib/login.mjs` | 四种 `authorize`：扫码、手机验证码、凭据 JSON、本机登录态 |
+| `lib/import.mjs` | 凭据解析（Cookie 串 / JSON / 嵌套 secret）与本机文件、目录读取 |
 | `lib/session.mjs` | 会话与凭据（`settle` / `accountSecret` / `renew`） |
 | `lib/legacy.mjs` | 把 wasm 时代落盘的 api 型 secret 升级成 oauth 型（先验会话，换到新凭据才写盘） |
 | `lib/catalog.mjs` | 两份目录的合并与兜底 |
