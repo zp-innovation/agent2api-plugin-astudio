@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><title>probe2</title>
+<style>body{background:#1e1f22;color:#ddd;font-family:system-ui;padding:16px}</style></head><body>
+<h3>ref spoof probe</h3><div id="w"></div><pre id="log" style="font-size:11px;color:#8ab;white-space:pre-wrap"></pre>
+<script>
+try { Object.defineProperty(Document.prototype, 'referrer', { get: function(){ return 'https://agent.xfyun.cn/studio-portal/overview'; }, configurable: true }); } catch(e) {}
+window.__log=[]; function log(s){window.__log.push(String(s));document.getElementById('log').textContent=window.__log.join(' / ');}
+log('doc.referrer now=' + document.referrer);
+</script>
+<script src="https://static.geetest.com/static/tools/gt.js"></script>
+<script>
+(async () => {
+  try {
+    const r = await fetch("https://agent.xfyun.cn/xingchen-studio/chat/gee-captcha");
+    const d = (await r.json()).data; window.__captcha = d;
+    log("gt=" + d.gt + " ch=" + d.challenge.slice(0,8));
+    window.__g = window.initGeetest({gt:d.gt, challenge:d.challenge, success:d.success, new_captcha:d.new_captcha,
+      https:true, offline:!d.success, product:"bind", width:"100%"}, (cap) => {
+      window.__cap = cap;
+      cap.onReady(()=>{log("onReady");cap.verify();});
+      cap.onSuccess(()=>{const v=cap.getValidate();log("SUCCESS "+JSON.stringify(v));window.__validate=v;});
+      cap.onError((e)=>log("onError "+JSON.stringify(e)));
+    });
+  } catch(e){ log("ERR "+e.message); }
+})();
+</script></body></html>

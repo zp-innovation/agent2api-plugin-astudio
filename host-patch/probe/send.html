@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>browser send probe</title>
+<script src="https://static.geetest.com/static/tools/gt.js"></script>
+</head>
+<body style="background:#1e1f22;color:#eee;font:13px/1.6 system-ui;padding:20px">
+<div id="log">loading…</div>
+<div id="holder"></div>
+<script>
+const log = (m) => { document.getElementById('log').textContent = m; console.log(m); };
+window.__state = { step: 'init' };
+(async () => {
+  try {
+    const cfgRes = await fetch('https://agent.xfyun.cn/xingchen-studio/chat/gee-captcha', { credentials: 'omit', headers: { accept: 'application/json' } });
+    const cfg = await cfgRes.json();
+    log('config: ' + JSON.stringify(cfg).slice(0, 120));
+    const data = cfg.data || {};
+    window.__state.step = 'captcha';
+    window.initGeetest({ gt: data.gt, challenge: data.challenge, offline: !data.success, new_captcha: data.new_captcha, https: true, product: 'bind', width: '100%' }, (cap) => {
+      cap.onReady(() => cap.verify());
+      cap.onSuccess(async () => {
+        const v = cap.getValidate() || {};
+        window.__state.tokens = v;
+        window.__state.step = 'sending';
+        log('tokens ok, sending from browser…');
+        const form = new FormData();
+        form.append('geetest_challenge', v.geetest_challenge);
+        form.append('geetest_validate', v.geetest_validate);
+        form.append('geetest_seccode', btoa(unescape(encodeURIComponent(v.geetest_seccode))));
+        form.append('mobile', '18122032590');
+        form.append('countryCode', '86');
+        try {
+          const res = await fetch('https://agent.xfyun.cn/xingchen-studio/login/mobile/send-verify-code', { method: 'POST', body: form, credentials: 'omit' });
+          const text = await res.text();
+          window.__state.send = { status: res.status, text };
+          log('SEND ' + res.status + ' ' + text.slice(0, 200));
+        } catch (e) {
+          window.__state.send = { error: String(e) };
+          log('SEND ERROR ' + e);
+        }
+        window.__state.step = 'done';
+      });
+      cap.onError((e) => { window.__state.error = (e && e.msg) || 'err'; log('captcha error: ' + window.__state.error); });
+    });
+  } catch (e) { log('fatal ' + e); window.__state.fatal = String(e); }
+})();
+</script></body></html>

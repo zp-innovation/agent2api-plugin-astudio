@@ -35,7 +35,7 @@ const METHODS = [
   {
     type: "oauth",
     label: "手机验证码登录",
-    instructions: "用手机号 + 短信验证码登录。点「登录并添加」会打开 AStudio 网页（studio-portal/overview，未登录会自动弹出登录框）：填手机号 → 勾选「已同意《服务协议》和《隐私协议》」→ 点「获取验证码」并拖动滑块拼图 → 把收到的验证码粘回面板弹出的输入框（那里的提示写着「粘贴授权令牌或 code」，填验证码就行；拿到码就够了，不用在网页上点登录）。上游发码强制极验滑块，滑块只能在网页里完成，所以取码这一步必须由你来做；拿到码之后的登录由插件完成。",
+    instructions: "用手机号 + 短信验证码登录。装了面板补丁（host-patch/astudio-sms-login.js）时全在面板里完成：点「登录并添加」→ 面板弹框确认手机号 → 点「获取验证码」→ 拖动滑块 → 短信到了把 4-8 位数字填进面板的输入框 → 完成。没有补丁时会打开 AStudio 网页（studio-portal/overview）：填手机号 → 勾选「已同意《服务协议》和《隐私协议》」→ 点「获取验证码」并拖动滑块 → 把验证码粘回面板（提示写着「粘贴授权令牌或 code」，填验证码就行，不用在网页上点登录）。上游发码强制极验滑块，滑块画在面板里还是网页里取决于补丁在不在，拿到码之后的登录都由插件完成。",
     prompts: [
       { key: "mobile", label: "手机号", placeholder: "18122032590", secret: false },
     ],
@@ -44,6 +44,12 @@ const METHODS = [
     localOnly: false,
     manualCallback: true,
     callbackInput: "code",
+    // 为什么要有一个「什么都不问」的 ask：宿主 api/session.rs:405 只对「动态表单」方法放行
+    // 未申报的字段，而动态表单的判定在 host/login.mjs:22 —— typeof method.ask === "function"。
+    // 面板补丁会把极验滑块的三件套塞进 inputs.captcha，没有这个标记就会被 400
+    // 「inputs 包含未申报的字段或非字符串值」挡回来。返回 null 时 resolvePrompts 不追加字段
+    // （login-prompts.mjs:59），所以面板上仍然只有 prompts 里那一个手机号输入框。
+    ask: () => null,
     authorize: authorizeSms,
   },
   {

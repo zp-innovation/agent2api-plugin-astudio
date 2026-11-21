@@ -3,7 +3,7 @@
 AStudio（讯飞星辰 Agent Studio）作为 [agent2api](https://github.com/zp-innovation/agent2api) / magpie provider：**微信扫码登录 + Responses 协议对话 + 模型目录 + 积分余额 + 每日登录签到**。
 
 > Provider id: `astudio`　对话: `https://astronstudio-api-volces-prod.xf-yun.com/model-gateway/v1`　账号面: `https://agent.xfyun.cn/xingchen-studio/`
-> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.6.0`
+> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.7.1`
 
 ---
 
@@ -142,6 +142,12 @@ curl -sS -X POST http://127.0.0.1:3065/api/plugins/scripts/install \
 也就是说：**发码**这一步必须由能跑极验的地方完成，**登录**这一步（`phone-quick-login`）不要滑块。
 所以取码只能由你在网页里做，取到码之后有两条提交路径：
 
+**C. 面板内一条龙（装了宿主补丁 `astudio-sms-login.js` 时的默认路径）**
+
+点「登录并添加」→ 面板自己弹框 → 确认手机号 → 点「获取验证码」→ **极验滑块直接浮在面板上** →
+拖完由插件在服务端发短信 → 面板切成「填验证码」→ 填 4-8 位数字 → 落账号。
+全程不开新标签页、不粘回调地址。补丁没装时自动退回 A/B。
+
 **A.「手机验证码登录」——宿主开网页 + 一次性粘贴框**
 
 1. 面板里只填**手机号**，点「登录并添加」；
@@ -232,6 +238,40 @@ sudo bash install.sh uninstall # 还原
 
 > **镜像升级会覆盖 `/app/ui`** —— 拉新镜像后重跑一次 `sudo bash install.sh` 即可。补丁只改容器内
 > 静态文件，不碰二进制、不碰数据卷；卸载时恢复备份的 `index.html`。
+
+### 短信登录也搬进面板：滑块 + 验证码（`astudio-sms-login.js`）
+
+**为什么插件自己做不到**：脚本宿主只认 `oauth`/`api` 两种方法（`host/login.mjs:17-27`），没有
+wasm 包才有的 `login.captcha.geetest` 能力；发码接口 `login/mobile/send-verify-code` 又强制极验三件。
+但**滑块可以画在面板页面里**，因为：
+
+- `GET xingchen-studio/chat/gee-captcha` 是 CORS 全开的（`access-control-allow-origin: *`），面板任意源都能取到 `{gt, challenge, success, new_captcha}`；
+- 极验 v4 的来源校验读的是 **`document.referrer`**（实测：只改 Referer 头 → 通过；只伪造 `document.referrer` → 同样通过），页内 `Object.defineProperty(Document.prototype,"referrer",…)` 即可；
+- `send-verify-code` / `phone-quick-login` 的 OPTIONS 只要求 `content-type`，不需要自定义身份头 —— 所以发码交给插件在服务端做（带 `clientType`/`studioVersion`，与后面的登录同一出口 IP）。
+
+补丁做四件事：
+
+1. **拦 `/api/session/login/start`**：只认 `provider==="astudio" && methodIndex===1 && !inputs.captcha`，其余原样透传；
+2. 弹自己的框（手机号 → 「获取验证码」），加载 `gt.js` 用 `initGeetest({product:"bind"})` 出滑块，用户拖完拿
+   `{geetest_challenge, geetest_validate, geetest_seccode}`；
+3. **带 `inputs:{mobile, captcha:JSON}` 重发 start** → 插件 `lib/sms.mjs` 发 multipart（seccode 先 base64）打
+   `send-verify-code`，回 `{method:"code", url:""}`；
+4. 把响应的 `manualCallback` **改成 false** 再交回宿主：否则 `web_shim.rs:1179-1182` 会在 10 秒后弹它自己的
+   「粘贴回调地址」覆盖层（`MANUAL_CALLBACK_GRACE_MS`），跟我们的输入框抢 UI。改成 false 后宿主只轮询
+   `/wait`（`:1232`），`url:""` 又让 `:1189` 判定 `mode='auto'` 不建窗口。用户在补丁框里填 4-8 位数字 →
+   `workbuddyDesktop.submitLoginCallback(state, code)` → 插件 `phone-quick-login` → 落账号。
+
+> **为什么方法 1 上挂了一个什么都不问的 `ask: () => null`**：宿主 `api/session.rs:405` 只对「动态表单」方法放行
+> 未申报的 `inputs` 字段，而动态表单的判定在 `host/login.mjs:22`（`typeof method.ask === "function"`）。
+> 没有这个标记时，第 3 步带 `captcha` 重发 start 会被 400「inputs 包含未申报的字段或非字符串值」挡回来
+> （实测就是这个错）。返回 `null` 时 `resolvePrompts`（`login-prompts.mjs:59`）不追加任何字段，面板上仍然
+> 只有手机号一个输入框 —— 而面板前端（`/app/ui/islands/ui.js`）根本不读 `dynamicPrompts`，所以外观零变化。
+
+> 已知抖动：极验偶尔回 `{"msg":"服务端forbidden： 请联系极验官网客服"}`（短时间重复校验会被拒，实测约 1/4，
+> 补上真实 Referer 头也一样）。补丁把这条翻译成「极验暂时拒绝了这次校验（短时间内重试太频繁）：等几秒再点
+> 「获取验证码」」，重试即可，不会白费一次登录（发码还没发生）。
+> 补丁依赖上游 CORS 与 `document.referrer` 可伪造这两点，属于**非承诺行为**：哪天极验改成校验真实 Referer 头，
+> 这条会退化回 A/B 两条老路，微信扫码不受影响。
 
 ## 账号记录长什么样
 
@@ -325,17 +365,18 @@ sudo bash install.sh uninstall # 还原
 7. **粘贴方式没有会话**，所以余额 / 签到不可用，面板会明说「只有模型凭据（没有网页会话）」，不假装读到了数字。
 8. **`studioVersion` 参与门控**：客户端版本 3.4.4 的目录只有 7 条，3.6.0 起 8 条。请求头必须带 `clientType`/`studioVersion`/`User-Agent: AStudio/3.6.0`，否则目录会被裁。
 9. 扫码取码 / 轮询两条 SSO 请求**不带 Cookie、不带 clientType/studioVersion**，只有 `Accept: application/json` 与 `User-Agent`；账号面请求才带 Cookie 与身份头。
-10. 手机验证码的**发码**与账号密码登录都卡在极验滑块上：极验只有宿主能渲染（wasm 包的 `login.captcha.geetest`），脚本宿主既画不出滑块也发不出短信，所以发码要用户在打开的 AStudio 网页登录页里自己完成（滑块 + 点「获取验证码」）。取到码之后两条路：开网页那条（方法 1）靠宿主的一次性粘贴框收码；「已收到码」那条（方法 2）在 start 时就把码填好，不开窗口也不弹框。账号密码登录这条不提供。
+10. 手机验证码的**发码**卡在极验滑块上，**账号密码登录**也卡在同一处（`login/check-account` 强制极验，盲试的 7 条替代路径全回 80000，geetest v3 离线兜底公式被判 20009）。0.7.0 起滑块由宿主补丁画在面板里（见上文），没装补丁时退回「打开 AStudio 网页自己取码」；**账号密码登录仍然不提供**。
 11. **粘贴框只认短信里的数字**：宿主 `core/login.rs:820-830` 会把提交内容整条当 code 交给插件（URL 里带 `code`/`authorization_code` 才会先被摘出来），所以粘地址栏只会白费这一次登录。插件按提交内容分别回「这是网页地址」/「这是手机号」/「里面没有 4-8 位验证码」，并顺带接受带 `?code=` 的回调地址。
 12. **方法 1 的验证码只有一次机会**：宿主的登录回调是一次性的（`login.mjs:126-133`），填错就得重新点「登录并添加」并重新取码；插件对非 4-8 位数字的粘贴在本地拦下，不消耗那次机会。方法 2 可以重填（但码本身是一次性的，重填也要重新取码）。
 13. **`github:` 安装走的是官方 CDN 中转，不是直连 GitHub**：宿主 `script/website.rs:35-47` 把 `api.github.com/repos/*/commits` 与 `codeload.github.com/*/tar.gz` 换成 `agent2api.dev/api/plugins/community/github-commits|github-archive`。那个中转会限流，实测返回 `429 {"error":"社区插件来源暂时限流，请稍后再试"}`（此时直连 GitHub 是 200）。碰上就隔几分钟重试，或改用下面的 `file:` 路径安装 —— 与仓库内容无关。
 14. **二维码弹窗是宿主侧补丁，不是插件能力**：面板怎么展示 `authUrl` 由编译进二进制的桥接脚本决定（`web_shim.rs:1206-1225` 的 `window.open("about:blank","_blank")`），插件无法影响。`host-patch/` 覆盖 `window.open` 把「图片 URL」改画成面板内弹窗；**镜像升级会覆盖 `/app/ui`**，升级后要重跑 `sudo bash install.sh`。
 15. 动态登录流程里宿主的超时是 **5 分钟**（壳 `LOGIN_TIMEOUT`），比二维码的 60 秒长得多 —— 过期提示是插件自己按 `expires_at` 判的，宿主不会替你关窗口。
+16. **短信登录的滑块同样是宿主侧补丁**（`host-patch/astudio-sms-login.js`）：它依赖上游 CORS 全开与 `document.referrer` 可伪造，也依赖宿主 `manualCallback` 可被响应改写的既有行为。镜像升级后要重跑 `install.sh`；补丁缺失时方法 1 自动退回「开网页 + 粘码」。
 
 ## 开发
 
 ```bash
-node --test "test/*.test.mjs"     # 70 条：协议常量、SSO 状态机、六种登录方式、验证码解析、目录合并、登录/续期/余额/签到全链路、老账号升级
+node --test "test/*.test.mjs"     # 77 条：协议常量、SSO 状态机、六种登录方式、验证码解析、滑块发码、目录合并、登录/续期/余额/签到全链路、老账号升级
 python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 assets/icon.png 与 icon.mjs
 ```
 
@@ -347,10 +388,15 @@ python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 
 | `lib/endpoints.mjs` | 上游地址与常量（版本号、TTL、轮询间隔、兜底模型名） |
 | `lib/http.mjs` | 信封解析、Cookie 头、身份头、超时、错误分类（`failed`/`expired`） |
 | `lib/scan.mjs` | SSO 取码 / 轮询、提示文案状态机 |
-| `lib/login.mjs` | 五种 `authorize`：扫码、手机验证码（开网页 + 粘码）、手机验证码（先取码再填）、凭据 JSON、本机登录态 |
+| `lib/login.mjs` | 六种 `authorize`：扫码、手机验证码（面板内滑块 / 开网页 + 粘码两种形态）、手机验证码（先取码再填）、凭据 JSON、本机登录态 |
+| `lib/sms.mjs` | 极验三件的归一化与校验、手机号打码、multipart 发码（`login/mobile/send-verify-code`） |
 | `lib/import.mjs` | 凭据解析（Cookie 串 / JSON / 嵌套 secret）与本机文件、目录读取 |
 | `lib/session.mjs` | 会话与凭据（`settle` / `accountSecret` / `renew`） |
 | `lib/legacy.mjs` | 把 wasm 时代落盘的 api 型 secret 升级成 oauth 型（先验会话，换到新凭据才写盘） |
 | `lib/catalog.mjs` | 两份目录的合并与兜底 |
 | `lib/provider.mjs` | 运行时模型清单与 `config` 写入 |
 | `lib/usage.mjs` / `lib/checkin.mjs` | 余额与签到 |
+| `host-patch/astudio-qr-modal.js` | 宿主补丁①：二维码改在面板内弹窗 |
+| `host-patch/astudio-sms-login.js` | 宿主补丁②：手机号 + 极验滑块 + 短信验证码全在面板内完成 |
+| `host-patch/install.sh` | 把两个补丁 `docker cp` 进容器并注入 `index.html`（`uninstall` 还原） |
+| `host-patch/verify-modal.py` / `verify-sms.py` | 两个补丁的无头验证（真二维码 / 真极验滑块） |

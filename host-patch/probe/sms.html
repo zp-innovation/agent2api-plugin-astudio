@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>AStudio 短信补丁验证</title></head>
+<body style="margin:0;background:#111;color:#ddd;font:13px system-ui">
+<div style="padding:20px">面板桩：这里模拟 agent2api 面板的 httpCall 与 workbuddyDesktop 桥。</div>
+<script>
+  window.__startCalls = [];
+  window.__submitted = null;
+  window.__active = true;
+  const realFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    if (url.indexOf("/api/session/login/start") !== -1) {
+      window.__startCalls.push({ body: init && init.body });
+      return Promise.resolve(new Response(JSON.stringify({
+        success: true,
+        data: { state: "flow-1", authUrl: "", manualCallback: true, callbackInput: "code", pollIntervalMs: 1500, instructions: "等待" }
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    return realFetch(input, init);
+  };
+  window.workbuddyDesktop = {
+    getLoginState: function () { return Promise.resolve({ active: window.__active, hint: window.__active ? "等待" : "" }); },
+    submitLoginCallback: function (state, code) { window.__submitted = { state: state, code: code }; return Promise.resolve({ accepted: true }); }
+  };
+</script>
+<script src="../astudio-sms-login.js"></script>
+</body>
+</html>

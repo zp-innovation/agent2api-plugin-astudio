@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><title>captcha card 2</title>
+<style>body{margin:0;background:#111;font:14px/1.6 system-ui;color:#e8e8e8}
+#ov{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
+#card{background:#1e1f22;border-radius:10px;padding:20px 22px 16px;width:min(360px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.4)}
+#card h1{font-size:15px;margin:0 0 4px;font-weight:600;text-align:center}
+#phone{color:#9a9a9a;font-size:13px;text-align:center;margin-bottom:8px}
+#cap{display:flex;justify-content:center;align-items:flex-start;min-height:40px}
+</style></head><body>
+<div id="ov"><div id="card"><h1>手机号登录</h1><div id="phone">18122032590</div><div id="cap"></div>
+<div style="color:#9a9a9a;font-size:12px;text-align:center;margin-top:8px">拖动滑块完成验证后，验证码会发到这个手机号</div></div></div>
+<script>
+window.__log=[]; const log=m=>window.__log.push(m);
+Object.defineProperty(Document.prototype,'referrer',{configurable:true,get:()=> 'https://agent.xfyun.cn/studio-portal/overview'});
+const S='https://agent.xfyun.cn/xingchen-studio/';
+function load(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=()=>res();s.onerror=()=>rej(new Error('load'));document.head.appendChild(s);});}
+(async()=>{
+  const cfg = await (await fetch(S+'chat/gee-captcha',{headers:{accept:'application/json'}})).json();
+  await load('https://static.geetest.com/static/tools/gt.js');
+  const d = cfg.data;
+  initGeetest({gt:d.gt,challenge:d.challenge,offline:!d.success,new_captcha:d.new_captcha,https:true,product:'bind',width:'100%'},(cap)=>{
+    cap.onReady(()=>{ cap.verify(); setTimeout(()=>{
+        const p=document.querySelector('.geetest_panel');
+        if(p){ document.getElementById('cap').appendChild(p);
+          p.style.position='relative'; p.style.left='auto'; p.style.top='auto'; p.style.right='auto'; p.style.bottom='auto';
+          p.style.transform='none'; p.style.margin='0';
+          const w=p.querySelector('.geetest_widget');
+          log('panel '+p.offsetWidth+'x'+p.offsetHeight+' widget '+(w?w.offsetWidth+'x'+w.offsetHeight:'-'));
+        }
+      },700); });
+    cap.onSuccess(v=>{log('SUCCESS '+JSON.stringify(v)); window.__validate=v;});
+    cap.onError(e=>log('ERR '+e)); cap.onClose(()=>log('CLOSE'));
+  });
+})();
+</script></body></html>

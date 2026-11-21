@@ -55,6 +55,10 @@ test("sign-in methods are exactly what the panel can render", () => {
   assert.equal(sms.manualCallback, true);
   assert.equal(sms.callbackInput, "code");
   assert.deepEqual(sms.prompts.map((prompt) => prompt.key), ["mobile"]);
+  // 宿主 api/session.rs:405 只对动态表单放行未申报字段（host/login.mjs:22 看 ask），
+  // 面板补丁正是靠它把滑块三件套塞进 inputs.captcha；ask 必须返回空，别在面板上多出字段。
+  assert.equal(typeof sms.ask, "function");
+  assert.equal(sms.ask({ mobile: "18122032590" }), null);
   // 第二段：验证码在 start 时就填好，不开窗口、不弹粘贴框（method:"auto" + browserMode none）
   assert.equal(smsForm.type, "oauth");
   assert.equal(typeof smsForm.authorize, "function");
