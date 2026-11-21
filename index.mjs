@@ -33,14 +33,15 @@ const METHODS = [
   {
     type: "oauth",
     label: "手机验证码登录",
-    instructions: "用手机号 + 短信验证码登录。验证码请先在 AStudio 官方客户端的「手机短信登录」里获取：上游发码强制极验滑块，脚本插件渲染不了滑块，所以发码这一步只能由你完成，登录本身由插件完成。",
+    instructions: "用手机号 + 短信验证码登录。点「登录并添加」会打开 AStudio 网页登录页：在那里填手机号 → 完成「拖动滑块完成拼图」→ 点「获取验证码」，短信到了把验证码粘回面板弹出的输入框（那里的提示写着「粘贴授权令牌或 code」，填验证码就行；拿到码就够了，不用在网页上点登录）。上游发码强制极验滑块，滑块只能在网页里完成，所以取码这一步必须由你来做；拿到码之后的登录由插件完成。",
     prompts: [
       { key: "mobile", label: "手机号", placeholder: "18122032590", secret: false },
-      { key: "code", label: "短信验证码", placeholder: "6 位数字", secret: false },
     ],
-    browserMode: "none",
+    browserMode: "external",
     embeddedOnly: false,
     localOnly: false,
+    manualCallback: true,
+    callbackInput: "code",
     authorize: authorizeSms,
   },
   {

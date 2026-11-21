@@ -40,19 +40,24 @@ test("sign-in methods are exactly what the panel can render", () => {
   assert.equal(typeof paste.authorize, "function");
 
   // host/login.mjs:41 只认 type==="oauth" 且带 authorize 的方法，所以除粘贴外都是 oauth；
-  // 这三条不开窗口（browserMode none -> url 为空 -> 客户端走 auto），靠输入框 + 后台换凭据。
-  for (const method of [sms, credential, local]) {
+  // 导入类两条不开窗口（browserMode none -> url 为空 -> 客户端走 auto），靠输入框 + 后台换凭据。
+  for (const method of [credential, local]) {
     assert.equal(method.type, "oauth");
     assert.equal(typeof method.authorize, "function");
     assert.equal(method.browserMode, "none");
     assert.equal(method.embeddedOnly, false);
     assert.ok(method.prompts.length >= 1);
   }
+  // 手机验证码要开登录页（滑块在网页里），并靠宿主的一次性粘贴框把验证码收回来。
+  assert.equal(sms.type, "oauth");
+  assert.equal(typeof sms.authorize, "function");
+  assert.equal(sms.browserMode, "external");
+  assert.equal(sms.manualCallback, true);
+  assert.equal(sms.callbackInput, "code");
+  assert.deepEqual(sms.prompts.map((prompt) => prompt.key), ["mobile"]);
   // host/login-prompts.mjs:5 的 key 规则 + promptSecret 的密文判定
   const keys = methods.flatMap((method) => method.prompts.map((prompt) => prompt.key));
   for (const key of keys) assert.match(key, /^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
-  assert.equal(sms.prompts[0].key, "mobile");
-  assert.equal(sms.prompts[1].key, "code");
   assert.equal(credential.prompts[0].secret, false);
   assert.equal(local.prompts[0].secret, false);
 });

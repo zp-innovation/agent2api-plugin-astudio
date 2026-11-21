@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  authorizeCredential, authorizeLocal, authorizeSms, splitPhone,
+  authorizeCredential, authorizeLocal, authorizeSms, smsCodeOf, splitPhone,
 } from "../lib/login.mjs";
+import { LOGIN_PAGE_URL } from "../lib/endpoints.mjs";
 import { cookieFields, credentialOf, looksLikePath, parseJson } from "../lib/import.mjs";
 
 const ok = (data) => ({ flag: true, code: 0, desc: "", data });
@@ -46,6 +47,22 @@ test("phone numbers are split into country code plus subscriber number", () => {
   assert.equal(splitPhone("abc"), null);
 });
 
+test("sms sign-in opens the AStudio login page and waits for a pasted code", async () => {
+  const world = stub({});
+  try {
+    const authorization = await authorizeSms({ mobile: "18122032590" }, {});
+    // login-policy.mjs:128-129 —— method:"code" 会让宿主弹出一次性 code 输入框
+    assert.equal(authorization.method, "code");
+    assert.equal(authorization.url, LOGIN_PAGE_URL);
+    assert.match(authorization.url, /^https:\/\/agent\.xfyun\.cn\/login$/);
+    assert.equal(typeof authorization.callback, "function");
+    assert.match(authorization.instructions, /获取验证码/);
+    assert.equal(world.calls.length, 0);
+  } finally {
+    world.restore();
+  }
+});
+
 test("sms sign-in posts the quick-login form and settles the account", async () => {
   const world = stub({
     "POST /xingchen-studio/login/phone-quick-login": ok({
@@ -54,7 +71,8 @@ test("sms sign-in posts the quick-login form and settles the account", async () 
     ...SETTLE,
   });
   try {
-    const result = await authorizeSms({ mobile: "18122032590", code: "123456" }, {});
+    const authorization = await authorizeSms({ mobile: "18122032590" }, {});
+    const result = await authorization.callback("123456");
     assert.equal(result.type, "success");
     assert.equal(result.source, "sms");
     assert.equal(result.access, "bearer-sms");
@@ -69,19 +87,34 @@ test("sms sign-in posts the quick-login form and settles the account", async () 
   }
 });
 
-test("sms sign-in refuses half-filled fields without touching the network", async () => {
+test("sms sign-in refuses a missing phone or an empty paste without touching the network", async () => {
   const world = stub({});
   try {
     const noPhone = await authorizeSms({ code: "123456" }, {});
     assert.equal(noPhone.type, "failed");
     assert.match(noPhone.error, /手机号/);
-    const noCode = await authorizeSms({ mobile: "18122032590" }, {});
-    assert.equal(noCode.type, "failed");
-    assert.match(noCode.error, /验证码/);
+    const authorization = await authorizeSms({ mobile: "18122032590" }, {});
+    const empty = await authorization.callback("  ");
+    assert.equal(empty.type, "failed");
+    assert.match(empty.error, /验证码/);
+    // 用户把授权地址粘进框里时不能拿它去换登录，也不能消耗掉那次机会
+    const wrong = await authorization.callback("https://agent.xfyun.cn/login");
+    assert.equal(wrong.type, "failed");
+    assert.match(wrong.error, /验证码/);
     assert.equal(world.calls.length, 0);
   } finally {
     world.restore();
   }
+});
+
+test("a whole SMS body still yields the six-digit code", () => {
+  assert.equal(smsCodeOf("123456"), "123456");
+  assert.equal(smsCodeOf("【讯飞星辰】验证码 123456，5 分钟内有效"), "123456");
+  assert.equal(smsCodeOf("验证码:9876"), "9876");
+  assert.equal(smsCodeOf("您的验证码是 4321，请勿泄露"), "4321");
+  assert.equal(smsCodeOf("not a code"), "");
+  assert.equal(smsCodeOf("1234567890123"), "");
+  assert.equal(smsCodeOf(""), "");
 });
 
 test("a rejected verification code comes back as the upstream reason", async () => {
@@ -89,7 +122,8 @@ test("a rejected verification code comes back as the upstream reason", async () 
     "POST /xingchen-studio/login/phone-quick-login": bad(10501002, "验证码无效，请重新获取并验证"),
   });
   try {
-    const result = await authorizeSms({ mobile: "18122032590", code: "000000" }, {});
+    const authorization = await authorizeSms({ mobile: "18122032590" }, {});
+    const result = await authorization.callback("000000");
     assert.equal(result.type, "failed");
     assert.match(result.error, /验证码无效/);
   } finally {
