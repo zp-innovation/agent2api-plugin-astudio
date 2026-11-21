@@ -50,6 +50,9 @@ ACCOUNTS = [
 BUILD_ROWS = """
 (accounts) => {
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const hostToggle = '<button type="button" class="usage-toggle ok" aria-expanded="false">' +
+    '<span class="val">可用 19900 积分</span>' +
+    '<span class="caret" aria-hidden="true">▾</span></button>';
   const cell = (a) =>
     '<span class="usage-sum-wrap flex flex-col gap-1">' +
       '<span class="usage-cell usage-window-cell"><span class="usage-window-quota">' +
@@ -77,7 +80,7 @@ BUILD_ROWS = """
   document.getElementById("rows").innerHTML = accounts.map((a) =>
     '<tr class="acct-row" data-id="' + a.id + '" data-provider="' + a.provider + '">' +
       '<td class="cell-name">' + esc(a.name) + '</td>' +
-      '<td class="cell-usage">' + cell(a) + '</td>' +
+      '<td class="cell-usage">' + (a.provider === "workbuddy" ? hostToggle : cell(a)) + '</td>' +
       '</tr>').join('');
 }
 """
@@ -129,23 +132,43 @@ async def main():
         lines = await page.eval_on_selector_all(
             "tr.acct-row .a2a-usage-line", "els => els.map(e => e.textContent)"
         )
+        classes = await page.eval_on_selector_all(
+            "tr.acct-row[data-provider='astudio'] .a2a-usage-line", "els => els.map(e => e.className)"
+        )
+        val_text = await page.eval_on_selector_all(
+            "tr.acct-row[data-provider='astudio'] .a2a-usage-line .val", "els => els.map(e => e.textContent)"
+        )
+        caret_text = await page.eval_on_selector_all(
+            "tr.acct-row[data-provider='astudio'] .a2a-usage-line .caret", "els => els.map(e => e.textContent)"
+        )
+        wb_toggle = await page.eval_on_selector_all(
+            "tr.acct-row[data-provider='workbuddy'] .usage-toggle", "els => els.map(e => e.textContent)"
+        )
+        print("装饰出的单条读数：", lines)
         hidden = await page.eval_on_selector_all(
             "tr.acct-row[data-provider='astudio'] .usage-window-cell",
             "els => els.map(e => getComputedStyle(e).display)",
         )
         untouched = await page.eval_on_selector_all(
-            "tr.acct-row[data-provider='workbuddy'] .usage-window-cell",
-            "els => els.map(e => getComputedStyle(e).display)",
+            "tr.acct-row[data-provider='workbuddy'] .a2a-usage-line",
+            "els => els.length",
         )
-        print("装饰出的单条读数：", lines)
+        print("AStudio 按钮 class（应 usage-toggle ok）：", classes)
+        print("AStudio .val 读数：", val_text)
+        print("AStudio .caret（应 ▾）：", caret_text)
         print("astudio 原生卡片 display（应全 none）：", hidden)
-        print("workbuddy 原生卡片 display（应仍 block）：", untouched)
+        print("workbuddy 行被装饰数（应 0）：", untouched)
+        print("WorkBuddy 宿主胶囊（对比基准）：", wb_toggle)
         await page.screenshot(path=str(SHOTS / "usage-1-closed.png"))
 
         await page.click("tr.acct-row[data-provider='astudio'] .a2a-usage-line")
         await page.wait_for_timeout(250)
         text = await page.eval_on_selector("#a2a-usage-pop", "e => e.innerText")
-        print("浮层内容：", text.replace("\n", " | "))
+        pop_classes = await page.eval_on_selector_all(
+            "#a2a-usage-pop [class]", "els => els.map(e => e.className)"
+        )
+        print("浮层内容：", text.replace(chr(10), " | "))
+        print("浮层复用的宿主类：", sorted(set(pop_classes)))
         await page.screenshot(path=str(SHOTS / "usage-2-open.png"))
 
         await page.mouse.click(30, 560)

@@ -278,8 +278,14 @@ WorkBuddy 那种是**一行「可用 466 ▾」**、明细收进浮层。这件�
 
 所以 `lib/usage.mjs` 怎么填，余额列都只会落到 `.usage-window-cell`（分窗口卡片）那一支。补丁因此做的是
 **换皮不换数**：在 `tr.acct-row[data-provider="astudio"]` 里隐藏 React 渲染的 `.usage-window-cell`，
-在同一个 `td.cell-usage` 里插入按钮「可用 1,500 积分 ⌄」，点开浮层显示套餐、总积分（各池相加）、
-各池余额、更新时间。
+在同一个 `td.cell-usage` 里插入一枚**与 WorkBuddy/AutoClaw 完全同款**的胶囊按钮「可用 1,500 积分 ▾」，
+点开浮层显示套餐、总积分（各池相加）、各池余额、更新时间。
+
+**样式统一靠复用宿主类，不是自造**：按钮直接挂 `usage-toggle ok`，内部是 `.val` + `.caret`（`▾`），
+底色/描边/圆角/绿字/悬停/展开翻转全由 `/app/ui/css/page-accounts-table.css` 提供；浮层内容整段用
+`usage-pop` / `usage-pop-total` / `usage-pop-group` / `usage-pop-row` / `usage-pop-line` / `usage-pop-name` /
+`usage-pop-view`（0 值 `muted`、有值 `ok`）。补丁只保留浮层容器的 fixed 定位（宿主走 Popover portal，
+我们没法直接用它的定位层）和按钮宽度收敛到单元格内。主题切换、深浅色自动跟随宿主。
 
 - 数据**从被隐藏的那张卡片 DOM 里读**（`.usage-window-value` 的 `title` 优先，因为面板把 `title` 设成原始读数、
   显示文本可能被换成「剩余 43%」），不碰接口、不需要面板 Key；
@@ -287,9 +293,11 @@ WorkBuddy 那种是**一行「可用 466 ▾」**、明细收进浮层。这件�
 - 卡片没渲染时（未登录 / 读额度中 / 该账号只有 Bearer）补丁什么都不做，面板保持原样 —— 补丁失效也不会把余额列弄空；
 - 分组表头那行「可用合计 5,298」来自 `usage.available`（`lib/usage.mjs` 的顶层 `balance`），与余额格无关，不受影响。
 
-`verify-usage.py` 用**面板自己的 `ui.css` + `page-accounts-table.css`** 加一段仿真的账号行做验证：
-断言只装饰 `data-provider="astudio"` 的行（WorkBuddy 行不动）、原生卡片被隐藏、读数与浮层内容正确、
-点外面/Esc 能关、整格替换后能自动重新装饰。
+`verify-usage.py` 用**面板自己的 `tokens.css` + `ui.css` + `page-accounts-table.css`** 加一段仿真的账号行做验证
+（WorkBuddy 那一行直接造一枚真的宿主 `usage-toggle` 当对比基准）：断言 AStudio 按钮 class 含
+`usage-toggle ok`、`.val` 读数和 `.caret` 都是 `▾`、浮层复用的是 `usage-pop-*` 那一套类、
+只装饰 `data-provider="astudio"` 的行、原生卡片被隐藏、点外面/Esc 能关、整格替换后能自动重新装饰。
+截图 `preview/usage-1-closed.png` / `usage-2-open.png` 里上下两行的胶囊完全同款。
 
 ## 账号记录长什么样
 

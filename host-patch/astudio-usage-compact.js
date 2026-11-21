@@ -33,9 +33,8 @@
 #@POP@ {
   position: fixed;
   z-index: 2147483000;
-  min-width: 248px;
+  width: 320px;
   max-width: min(320px, calc(100vw - 24px));
-  padding: 10px 14px 12px;
   border: 1px solid var(--ui-hairline, #e6e6e6);
   border-radius: var(--r-md, 10px);
   background: var(--ui-surface, #fff);
@@ -45,118 +44,9 @@
   line-height: 1.45;
 }
 #@POP@[hidden] { display: none; }
-#@POP@ .a2a-usage-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--ui-text-3, #8a8a8a);
-  font-size: 11.5px;
-}
-#@POP@ .a2a-usage-head b {
-  color: var(--ui-text-1, #1f1f1f);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-#@POP@ .a2a-usage-head .a2a-usage-status {
-  margin-left: auto;
-  color: var(--ui-success, #12a150);
-}
-#@POP@ .a2a-usage-total {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 8px 11px;
-  border-radius: var(--r-xs, 6px);
-  background: var(--ui-surface-inset, #f1f1f2);
-}
-#@POP@ .a2a-usage-total .k { font-size: 11.5px; color: var(--ui-text-3, #8a8a8a); }
-#@POP@ .a2a-usage-total .v {
-  margin-left: auto;
-  color: var(--ui-success, #12a150);
-  font-size: 13.5px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-#@POP@ .a2a-usage-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  color: var(--ui-text-3, #8a8a8a);
-  font-size: 11px;
-}
-#@POP@ .a2a-usage-group::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--ui-hairline, #e6e6e6);
-}
-#@POP@ .a2a-usage-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 7px 0;
-}
-#@POP@ .a2a-usage-row + .a2a-usage-row { border-top: 1px dashed var(--ui-hairline, #e6e6e6); }
-#@POP@ .a2a-usage-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ui-text-2, #4a4a4a);
-}
-#@POP@ .a2a-usage-view {
-  margin-left: auto;
-  flex: none;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-#@POP@ .a2a-usage-view.muted { color: var(--ui-text-3, #8a8a8a); font-weight: 500; }
-#@POP@ .a2a-usage-foot {
-  margin-top: 10px;
-  padding-top: 9px;
-  border-top: 1px solid var(--ui-hairline, #e6e6e6);
-  color: var(--ui-text-3, #8a8a8a);
-  font-size: 10.5px;
-}
-
-.a2a-usage-line {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  margin: 0;
-  padding: 2px 6px;
-  border: 0;
-  border-radius: var(--r-xs, 6px);
-  background: transparent;
-  color: var(--ui-text-1, #1f1f1f);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  text-align: left;
-  cursor: pointer;
-}
-.a2a-usage-line:hover { background: var(--ui-row-hover, rgba(0, 0, 0, .05)); }
-.a2a-usage-line:focus-visible { outline: 2px solid var(--ui-focus-ring, #4a8cff); outline-offset: 1px; }
-.a2a-usage-line .a2a-usage-label { flex: none; color: var(--ui-text-3, #8a8a8a); font-size: 11.5px; }
-.a2a-usage-line .a2a-usage-value {
-  flex: none;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.a2a-usage-line .a2a-usage-value.is-zero { color: var(--ui-text-3, #8a8a8a); font-weight: 500; }
-.a2a-usage-line .a2a-usage-caret {
-  flex: none;
-  margin-left: 1px;
-  color: var(--ui-text-3, #8a8a8a);
-  font-size: 11px;
-  line-height: 1;
-  transition: transform .15s ease;
-}
-.a2a-usage-line[aria-expanded="true"] .a2a-usage-caret { transform: rotate(180deg); }
+/* 按钮本体直接用宿主的 .usage-toggle，这里只把宽度收敛到余额列内，
+   其余底色/描边/圆角/绿字/箭头/悬停/展开态全部继承宿主样式 */
+.a2a-usage-line.usage-toggle { width: 100%; margin-inline: 0; }
 `.split("@POP@").join(POP_ID);
 
   const style = document.createElement("style");
@@ -231,25 +121,24 @@
     const node = ensurePop();
     node.textContent = "";
 
-    const head = document.createElement("div");
-    head.className = "a2a-usage-head";
-    const planLabel = document.createElement("span");
-    planLabel.textContent = "套餐";
-    const planValue = document.createElement("b");
-    planValue.textContent = data.plan || "—";
-    head.append(planLabel, planValue);
-    if (data.status) {
-      const status = document.createElement("span");
-      status.className = "a2a-usage-status";
-      status.textContent = data.status;
-      head.appendChild(status);
+    // 结构照宿主 WorkBuddy/AutoClaw 的 .usage-pop 一组，样式全部复用宿主 CSS
+    const wrap = document.createElement("div");
+    wrap.className = "usage-pop";
+
+    if (data.plan || data.status) {
+      const sub = document.createElement("div");
+      sub.className = "usage-pop-sub";
+      const bits = [];
+      if (data.plan) bits.push("套餐 " + data.plan);
+      if (data.status) bits.push(data.status);
+      sub.textContent = bits.join(" · ");
+      wrap.appendChild(sub);
     }
-    node.appendChild(head);
 
     const total = totalOf(data.rows);
     if (total !== null) {
       const box = document.createElement("div");
-      box.className = "a2a-usage-total";
+      box.className = "usage-pop-total";
       const key = document.createElement("span");
       key.className = "k";
       key.textContent = "总积分";
@@ -257,44 +146,48 @@
       value.className = "v";
       value.textContent = formatNumber(total) + " 积分";
       box.append(key, value);
-      node.appendChild(box);
+      wrap.appendChild(box);
     }
 
     const group = document.createElement("div");
-    group.className = "a2a-usage-group";
+    group.className = "usage-pop-group";
     group.textContent = "积分明细";
-    node.appendChild(group);
+    wrap.appendChild(group);
 
     for (const row of data.rows) {
       const line = document.createElement("div");
-      line.className = "a2a-usage-row";
+      line.className = "usage-pop-line";
       const name = document.createElement("span");
-      name.className = "a2a-usage-name";
+      name.className = "usage-pop-name";
       name.textContent = row.name;
       const view = document.createElement("span");
       const amount = amountOf(row.view);
-      view.className = "a2a-usage-view" + (amount === 0 ? " muted" : "");
+      view.className = "usage-pop-view " + (amount ? "ok" : "muted");
       view.textContent = row.view;
       line.append(name, view);
-      node.appendChild(line);
+      const rowWrap = document.createElement("div");
+      rowWrap.className = "usage-pop-row";
+      rowWrap.appendChild(line);
+      wrap.appendChild(rowWrap);
     }
 
     if (data.updated) {
-      const foot = document.createElement("div");
-      foot.className = "a2a-usage-foot";
-      foot.textContent = data.updated;
-      node.appendChild(foot);
+    const foot = document.createElement("div");
+    foot.className = "usage-pop-sub";
+    foot.textContent = data.updated;
+    wrap.appendChild(foot);
     }
+
+    node.appendChild(wrap);
     return node;
   }
-
   function place(anchor) {
     const node = ensurePop();
     const rect = anchor.getBoundingClientRect();
     node.hidden = false;
     const box = node.getBoundingClientRect();
     const margin = 6;
-    let left = rect.left;
+    let left = rect.left + (rect.width - box.width) / 2;
     if (left + box.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - 8 - box.width);
     let top = rect.bottom + margin;
     if (top + box.height > window.innerHeight - 8) {
@@ -345,18 +238,18 @@
     if (!button) {
       button = document.createElement("button");
       button.type = "button";
-      button.className = "a2a-usage-line";
+      // 按钮本体复用宿主 .usage-toggle：底色/描边/圆角/绿字/箭头/悬停/展开态
+      // 全部由宿主 CSS 提供（WorkBuddy/AutoClaw 同一套），不在这里自造样式
+      button.className = "a2a-usage-line usage-toggle";
       button.setAttribute("aria-expanded", "false");
       button.setAttribute("aria-haspopup", "dialog");
-      const labelNode = document.createElement("span");
-      labelNode.className = "a2a-usage-label";
-      labelNode.textContent = "可用";
-      const valueNode = document.createElement("span");
-      valueNode.className = "a2a-usage-value";
+      const valNode = document.createElement("span");
+      valNode.className = "val";
       const caret = document.createElement("span");
-      caret.className = "a2a-usage-caret";
-      caret.textContent = "⌄";
-      button.append(labelNode, valueNode, caret);
+      caret.className = "caret";
+      caret.setAttribute("aria-hidden", "true");
+      caret.textContent = "▾";
+      button.append(valNode, caret);
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -367,10 +260,10 @@
       td.appendChild(button);
     }
 
-    const valueNode = button.querySelector(".a2a-usage-value");
-    valueNode.textContent = value;
-    valueNode.classList.toggle("is-zero", total === 0);
-
+    const valNode = button.querySelector(".val");
+    valNode.textContent = "可用 " + value;
+    button.classList.toggle("ok", total > 0);
+    button.classList.toggle("muted", !(total > 0));
     // 隐藏原生卡片，但保留它 —— 弹窗的数据就是从这里读的
     cell.style.display = "none";
   }
