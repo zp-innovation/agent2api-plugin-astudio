@@ -162,6 +162,38 @@ test("usage reports both point pools without letting them gate requests", async 
     assert.equal(report.windows[0].balance, 1200);
     assert.equal(report.windows[0].runsOut, 500);
     assert.equal(report.error, undefined);
+    // 顶层这一个数是面板「可用合计」和选路「余额不足」唯一的依据。
+    assert.equal(report.balance, 1200);
+  } finally {
+    world.restore();
+  }
+});
+
+test("usage adds both point pools into the single available number", async () => {
+  const world = stub({
+    "GET /xingchen-studio/points/balance": ok({ totalBalance: 1200, sparkTotalBalance: 300 }),
+    "GET /xingchen-studio/membership/me": ok({ planName: "体验版" }),
+  });
+  try {
+    const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s", token: "t" } });
+    assert.equal(report.balance, 1500);
+    assert.deepEqual(report.windows.map((row) => row.balance), [1200, 300]);
+    assert.equal(report.plan, "体验版");
+  } finally {
+    world.restore();
+  }
+});
+
+test("usage keeps the available number one shape: absent when the reading failed", async () => {
+  const world = stub({
+    "GET /xingchen-studio/points/balance": busy(50000, "系统繁忙"),
+    "GET /xingchen-studio/membership/me": ok({ planName: "体验版" }),
+  });
+  try {
+    const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s", token: "t" } });
+    assert.equal("balance" in report, false);
+    assert.deepEqual(report.windows, []);
+    assert.match(report.error, /系统繁忙/);
   } finally {
     world.restore();
   }

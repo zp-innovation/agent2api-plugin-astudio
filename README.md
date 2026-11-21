@@ -3,7 +3,7 @@
 AStudio（讯飞星辰 Agent Studio）作为 [agent2api](https://github.com/zp-innovation/agent2api) / magpie provider：**微信扫码登录 + Responses 协议对话 + 模型目录 + 积分余额 + 每日登录签到**。
 
 > Provider id: `astudio`　对话: `https://astronstudio-api-volces-prod.xf-yun.com/model-gateway/v1`　账号面: `https://agent.xfyun.cn/xingchen-studio/`
-> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.2.0`
+> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.3.1`
 
 ---
 
@@ -226,6 +226,12 @@ sudo bash install.sh uninstall # 还原
 
 `aside` 是刻意的：积分是**余额型**读数，恰好一池为 0 时不能触发宿主的配额拦截（`host/allowance.mjs:5-27` 只看非 aside 窗口的 `remainingPercent/balance === 0`）。
 
+**可用合计**（报告顶层的 `balance` 一个数）：
+
+上面两行只是明细，账号页列表里那一列「可用合计 / 可用最低」来自**顶层标量**——宿主 `host/reports.mjs:37` 只读 `available: number(value.balance)`，再由 `core/accounts_list/balance.rs:40-58` 聚合成各组的 `{sum, counted, total, additive}`。所以 `lib/usage.mjs` 额外返回 `balance = 通用积分 + 星火积分`（两池都是「剩余多少就能用多少」，可以直接相加）；只读到一池时用另一池的 0 补齐，两池都读不到时**整个字段不出现**——那样这一格的 `counted` 才不会虚增，面板显示「—」而不是假的 0。
+
+这个字段还有第二个用处：它会落进 `account_usage_records.remaining`（`core/usage_records.rs:319-332`），转发选路时按「余额不足跳过」用。本插件没有申报 `defaultLimiters`，所以宿主用默认阈值 `1.0`——两池同时为 0 的账号会被选路跳过（这种账号本来也打不动上游，行为可接受，但别把它当成 bug）。
+
 **会员**：`membership/me` 的 `planName` 作计划名、`endTime` 作到期时间、`uid` 作账号标识。
 
 读不到时不会染红整列：带 `plan` 的返回会被 `host/reports.mjs:29` 降级成 warnings 里的一条提示。
@@ -278,7 +284,7 @@ sudo bash install.sh uninstall # 还原
 ## 开发
 
 ```bash
-node --test "test/*.test.mjs"     # 58 条：协议常量、SSO 状态机、五种登录方式、目录合并、登录/续期/余额/签到全链路、老账号升级
+node --test "test/*.test.mjs"     # 60 条：协议常量、SSO 状态机、五种登录方式、目录合并、登录/续期/余额/签到全链路、老账号升级
 python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 assets/icon.png 与 icon.mjs
 ```
 
