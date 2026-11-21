@@ -4,15 +4,16 @@
 #   sudo bash install.sh            # 安装 / 重新安装
 #   sudo bash install.sh uninstall  # 卸载（恢复 index.html 并删掉脚本）
 #
-# 两个补丁：
-#   astudio-qr-modal.js  微信二维码改成面板内弹窗（不再开新标签页）
-#   astudio-sms-login.js 手机验证码登录改成面板内「手机号 + 极验滑块 + 验证码」
+# 三个补丁：
+#   astudio-qr-modal.js     微信二维码改成面板内弹窗（不再开新标签页）
+#   astudio-sms-login.js    手机验证码登录改成面板内「手机号 + 极验滑块 + 验证码」
+#   astudio-usage-compact.js 余额列从整块卡片改成单条读数 + 点开弹窗（WorkBuddy 形态）
 #
 # 镜像升级（docker compose pull / 重建容器）会覆盖 /app/ui，升级后要再执行一次。
 set -eo pipefail
 
 CONTAINER="${CONTAINER:-agent2api}"
-FILES="astudio-qr-modal.js astudio-sms-login.js"
+FILES="astudio-qr-modal.js astudio-sms-login.js astudio-usage-compact.js"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ACTION="${1:-install}"
 
@@ -25,7 +26,7 @@ if [ "$ACTION" = "uninstall" ]; then
   docker exec "$CONTAINER" sh -c '
     cd /app/ui
     if [ -f index.html.a2a-orig ]; then mv index.html.a2a-orig index.html; fi
-    rm -f astudio-qr-modal.js astudio-sms-login.js
+    rm -f astudio-qr-modal.js astudio-sms-login.js astudio-usage-compact.js
   '
   echo "已卸载。"
   exit 0
