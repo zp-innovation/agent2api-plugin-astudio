@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  authorizeCredential, authorizeLocal, authorizeSms, authorizeSmsForm, codeFromUrl, smsCodeOf, splitPhone,
+  authorizeCredential, authorizeLocal, authorizeSms, codeFromUrl, smsCodeOf, splitPhone,
   submissionHint,
 } from "../lib/login.mjs";
 import { LOGIN_PAGE_URL } from "../lib/endpoints.mjs";
@@ -154,33 +154,6 @@ test("a code carried inside a callback URL is still accepted", async () => {
     assert.equal(result.type, "success");
     const login = world.calls.find((call) => call.key === "POST /xingchen-studio/login/phone-quick-login");
     assert.equal(login.body, "mobile=18122032590&verifyCode=123456&countryCode=86");
-  } finally {
-    world.restore();
-  }
-});
-
-test("the two-field sms method needs no window and signs in in one submit", async () => {
-  const world = stub({
-    "POST /xingchen-studio/login/phone-quick-login": ok({
-      account_id: "22098822931", ssoSessionId: "sid-f2", token: "tok-f2", uid: 22098822931,
-    }),
-    ...SETTLE,
-  });
-  try {
-    const noCode = await authorizeSmsForm({ mobile: "18122032590" }, {});
-    assert.equal(noCode.type, "failed");
-    assert.match(noCode.error, /验证码/);
-    assert.equal(world.calls.length, 0);
-
-    const authorization = await authorizeSmsForm({ mobile: "18122032590", code: "123456" }, {});
-    // method:"auto" + 不返回 url ⇒ 宿主不建窗口、不弹粘贴框，start 之后立刻跑 callback
-    assert.equal(authorization.method, "auto");
-    assert.equal(authorization.url, "");
-    const result = await authorization.callback(undefined);
-    assert.equal(result.type, "success");
-    assert.equal(result.source, "sms");
-    assert.equal(result.access, "bearer-sms");
-    assert.equal(result.session.ssoSessionId, "sid-f2");
   } finally {
     world.restore();
   }

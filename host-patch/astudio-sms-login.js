@@ -28,7 +28,7 @@
   window.__a2aAstudioSms = true;
 
   const PROVIDER = "astudio";
-  // astudio 插件的方法表：0 扫码 / 1 手机验证码登录 / 2 手机验证码（已收到码）/ 3 粘贴 / 4 JSON / 5 本机
+  // astudio 插件的方法表：0 扫码 / 1 手机验证码登录 / 2 粘贴 / 3 JSON / 4 本机
   const SMS_METHOD_INDEX = 1;
   const START_PATH = "/api/session/login/start";
   const GEE_CONFIG = "https://agent.xfyun.cn/xingchen-studio/chat/gee-captcha";
