@@ -178,10 +178,58 @@ test("usage reports credits with the absolute expiry for WorkBuddy-style countdo
     const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
     assert.equal(report.unit, "积分");
     assert.deepEqual(report.credits, [
-      { name: "通用积分", unit: "积分", total: 1600, remain: 1600, expireAt: "2026-12-15T04:54:08" },
+      { name: "通用积分", unit: "积分", total: 1600, remain: 1600, expireAt: "2026-12-15T04:54:08+08:00" },
     ]);
     // 星火积分为 0 时不占一行，避免面板出现「剩 0」的噪声明细。
     assert.equal(report.credits.length, 1);
+  } finally {
+    world.restore();
+  }
+});
+
+test("usage turns per-grant point details into credits with absolute expiry", async () => {
+  const world = stub({
+    "GET /xingchen-studio/points/balance": ok({ totalBalance: 1600, sparkTotalBalance: 0 }),
+    "GET /xingchen-studio/membership/me": ok({ planName: "体验版" }),
+    "GET /xingchen-studio/points/details": ({ url }) => ok({
+      total: 2,
+      items: [
+        { assetCode: "GENERAL_POINTS", direction: "CREDIT", amount: 100, balanceAfter: 1500,
+          reason: "每日登录赠送", createTime: "2026-11-20T01:02:03", expireTime: "2026-11-27T01:02:03",
+          deductions: [{ amount: 40 }] },
+        { assetCode: "GENERAL_POINTS", direction: "CREDIT", amount: 1500, balanceAfter: 1600,
+          reason: "客户端下载奖励", createTime: "2026-11-01T00:00:00", expireTime: "2027-02-15T04:54:03" },
+      ],
+    }),
+  });
+  try {
+    const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
+    assert.equal(report.balance, 1600);
+    assert.equal(report.credits.length, 2);
+    assert.deepEqual(report.credits[0], {
+      name: "每日登录赠送", unit: "积分", total: 100, remain: 60,
+      startAt: "2026-11-20T01:02:03+08:00", expireAt: "2026-11-27T01:02:03+08:00",
+    });
+    assert.equal(report.credits[1].expireAt, "2027-02-15T04:54:03+08:00");
+    // 逐笔查询带分页与方向，别把 DEBIT 也拉进来。
+    const call = world.calls.find((c) => c.key === "GET /xingchen-studio/points/details");
+    assert.match(call.url.searchParams.get("direction"), /CREDIT/);
+  } finally {
+    world.restore();
+  }
+});
+
+test("usage falls back to the aggregate expiry when point details fail", async () => {
+  const world = stub({
+    "GET /xingchen-studio/points/balance": ok({ totalBalance: 900, activityBalance: 300, activityNextExpireTime: "2026-12-15T04:54:08" }),
+    "GET /xingchen-studio/membership/me": ok({ planName: "体验版" }),
+  });
+  try {
+    const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
+    assert.deepEqual(report.credits, [
+      { name: "通用积分", unit: "积分", total: 300, remain: 300, expireAt: "2026-12-15T04:54:08+08:00" },
+    ]);
+    assert.equal(report.error, undefined);
   } finally {
     world.restore();
   }

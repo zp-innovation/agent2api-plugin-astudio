@@ -3,7 +3,7 @@
 AStudio（讯飞星辰 Agent Studio）作为 [agent2api](https://github.com/zp-innovation/agent2api) / magpie provider：**微信扫码登录 + Responses 协议对话 + 模型目录 + 积分余额 + 每日登录签到**。
 
 > Provider id: `astudio`　对话: `https://astronstudio-api-volces-prod.xf-yun.com/model-gateway/v1`　账号面: `https://agent.xfyun.cn/xingchen-studio/`
-> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.8.0`
+> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.8.1`
 
 ---
 
@@ -342,14 +342,22 @@ WorkBuddy 那种是**一行「可用 466 ▾」**、明细收进浮层。这件�
 
 这个字段还有第二个用处：它会落进 `account_usage_records.remaining`（`core/usage_records.rs:319-332`），转发选路时按「余额不足跳过」用。本插件没有申报 `defaultLimiters`，所以宿主用默认阈值 `1.0`——两池同时为 0 的账号会被选路跳过（这种账号本来也打不动上游，行为可接受，但别把它当成 bug）。
 
-**积分倒计时（WorkBuddy 同款）**：`lib/usage.mjs` 另返回 `credits[]`，把活动积分那笔按
-`（通用积分, total, remain, expireAt = activityNextExpireTime）`上报；星火积分有余额时也补一行（无到期时刻就不造一个）。
-新镜像的宿主 `reports.mjs` 已把 credits 的 `name/unit/total/remain/expireAt/…` 原样透给面板，面板据此走
-WorkBuddy 那条原生渲染：胶囊按钮上的「7天 N」角标、弹窗里的「7 天内到期」汇总块、每行右侧的
-`usage-pop-soon-tag`（`X 天后到期` / `明天到期` / `{hours} 小时后到期`）。到期时刻照实上报，不伪造批次：
-AStudio 当前活动积分在约 22 天后到期，所以角标要等到进入 7 天窗口才会自动出现，在那之前弹窗里显示的是
-绝对到期日期；上游一旦给出更近的批次或到期进入 7 天内，显示形式与 WorkBuddy 完全一致。
-顶层另加 `unit: "积分"`，让 `availableView` 变成「可用 1600 积分」而不是裸数字。
+**积分倒计时（WorkBuddy 同款）**：两处必须同时到位，缺一处面板就只画老的分窗口卡片。
+
+1. **能力门**：新镜像的宿主 `models.mjs` 从 `hooks.auth.accountFeatures` 生成 `/api/session` 的
+   `accountFeatures.astudio`，其中 `creditDetail`/`creditExpiry` 一一对应插件声明的
+   `creditDetail`/`creditExpiry`。面板 `ui.js` 的 `jM()`/`sx()` 读这两个门：关着时 `qOe()`
+   直接跳过 `credits[]`，并 surprise 地不弹「积分明细」。插件工厂已声明
+   `accountFeatures: { creditDetail: true, creditExpiry: true }`，部署后可用
+   `GET /api/session` 的 `accountFeatures.astudio.credit_detail/credit_expiry === true` 复核。
+2. **数据**：`lib/usage.mjs` 返回 `credits[]`，并把 `points/details?direction=CREDIT` 的逐笔发放
+   映射为 `{name: reason, unit, total: amount, remain: amount - deductions, startAt: createTime,
+   expireAt: expireTime}`（时间补 `+08:00`，宿主 `Date.parse` 才不会错 8 小时）。逐笔失败才回退到
+   `points/balance` 的活动积分聚合行；不伪造 7 天批次。新镜像宿主 `reports.mjs` 已把 credits
+   原样透给面板，`qOe()` 据此画 WorkBuddy 同款胶囊 + 「积分明细」弹窗；每笔在 7 天窗口内时，
+   胶囊上出现「7天 N」角标，弹窗里出现「7 天内到期」汇总与每行 `usage-pop-soon-tag`
+   （`X 天后到期` / `明天到期` / `{hours} 小时后到期`）。AStudio 当前批次多在 22 天以外，
+   所以角标要等进入 7 天窗口才自动出现，此前弹窗里显示绝对到期日期。
 
 **会员**：`membership/me` 的 `planName` 作计划名、`endTime` 作到期时间、`uid` 作账号标识。
 

@@ -18,6 +18,9 @@ test("the factory survives being called the way entries.mjs probes candidates", 
   assert.equal(typeof hooks.auth.icon, "string");
   assert.match(hooks.auth.icon, /^data:image\/png;base64,/);
   assert.equal(hooks.auth.keepAlive, true);
+  // 新镜像 models.mjs 从 hooks.auth.accountFeatures 生成 /api/session 的能力门；
+  // 两个门关着时面板不会画 WorkBuddy 式积分明细与到期角标。
+  assert.deepEqual(hooks.auth.accountFeatures, { creditDetail: true, creditExpiry: true });
 });
 
 test("sign-in methods are exactly what the panel can render", () => {

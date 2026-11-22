@@ -141,6 +141,13 @@ export async function AStudioPlugin({ client } = {}) {
       provider: PROVIDER_ID,
       icon: ICON,
       keepAlive: true,
+
+      // 新镜像的宿主 models.mjs 从 hooks.auth.accountFeatures 取能力门：
+      // credit_detail -> accountFeatures.astudio.credit_detail，credit_expiry 同理。
+      // 两个门关着时，面板 ui.js 的 jM()/sx() 会跳过 credits[]，即使插件上报了明细也
+      // 只会画老的 usage-window-cell；打开后走 WorkBuddy 同款「积分明细」弹层 +
+      // 「7天 N」角标 + 每行「X 天后到期」（渲染函数 qOe / NAe / C_ / w7）。
+      accountFeatures: { creditDetail: true, creditExpiry: true },
       loader,
       refresh: (auth) => renew(auth),
       usage,
