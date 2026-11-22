@@ -4,9 +4,10 @@
 #   sudo bash install.sh            # 安装 / 重新安装
 #   sudo bash install.sh uninstall  # 卸载（恢复 index.html 并删掉脚本）
 #
-# 默认装两个补丁：
+# 默认装两个 JS 补丁 + 一个 bundle 补丁：
 #   astudio-qr-modal.js     微信二维码改成面板内弹窗（不再开新标签页）
 #   astudio-sms-login.js    手机验证码登录改成面板内「手机号 + 极验滑块 + 验证码」
+#   patch-countdown-window.py 把面板积分到期窗口从 7 天扩到 30 天（AStudio 积分 22 天到期）
 #
 # astudio-usage-compact.js 在 agent2api:gov403-credits2-20261122 及更新的镜像上**不需要**：
 # 新面板已原生把 windows/credits 画成 WorkBuddy 式胶囊 + 弹窗，脚本插件只要上报 credits
@@ -34,6 +35,8 @@ if [ "$ACTION" = "uninstall" ]; then
     cd /app/ui
     if [ -f index.html.a2a-orig ]; then mv index.html.a2a-orig index.html; fi
     rm -f astudio-qr-modal.js astudio-sms-login.js astudio-usage-compact.js
+    # 恢复 bundle 补丁的备份（如果存在）
+    if [ -f islands/ui.js.a2a-countdown-orig ]; then mv islands/ui.js.a2a-countdown-orig islands/ui.js; fi
   '
   echo "已卸载。"
   exit 0
@@ -58,6 +61,17 @@ for FILE in $FILES; do
     echo "已注入：$FILE"
   '
 done
+
+
+# ── 倒计时窗口补丁：把面板 7 天窗口改成 30 天 ──────────────────────────────
+# AStudio 积分到期时刻在 22 天左右，面板硬编码的 7 天窗口会把它完全滤掉。
+# patch-countdown-window.py 改 bundle 里的 4 个字节串：窗口常量与 3 处 badge 文案。
+# 幂等：如果 bundle 里已经是 30*864e5 就跳过。需要 python3 在容器宿主机上。
+if [ -f "$HERE/patch-countdown-window.py" ]; then
+  python3 "$HERE/patch-countdown-window.py" || echo "WARNING: 倒计时窗口补丁失败（可能需要 python3）"
+else
+  echo "WARNING: 找不到 patch-countdown-window.py，跳过倒计时窗口补丁"
+fi
 
 docker exec "$CONTAINER" sh -c 'grep -n "astudio-" /app/ui/index.html'
 echo "完成。浏览器强制刷新（Ctrl/Cmd+Shift+R）后生效。"
