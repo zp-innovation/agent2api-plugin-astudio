@@ -3,7 +3,7 @@
 AStudio（讯飞星辰 Agent Studio）作为 [agent2api](https://github.com/zp-innovation/agent2api) / magpie provider：**微信扫码登录 + Responses 协议对话 + 模型目录 + 积分余额 + 每日登录签到**。
 
 > Provider id: `astudio`　对话: `https://astronstudio-api-volces-prod.xf-yun.com/model-gateway/v1`　账号面: `https://agent.xfyun.cn/xingchen-studio/`
-> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.7.2`
+> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.8.0`
 
 ---
 
@@ -212,7 +212,9 @@ agent2api-server 二进制（`web_shim.rs:47`），只要 `login/start` 回了�
 | `verify-modal.py` | 用 playwright 取一张**真二维码**跑补丁：断言弹窗出现、图片真加载、`context.pages` 仍是 1、取消按钮生效、非图片 URL 仍开新标签页 |
 
 `host-patch/` 里还有两个补丁，各自在下面单独一节：`astudio-sms-login.js`（手机验证码登录搬进面板）、
-`astudio-usage-compact.js`（余额列改成单条读数 + 弹窗）。`install.sh` 一次把三个都装上。
+`astudio-usage-compact.js`（老镜像的余额列补丁）。`install.sh` 默认装前两个；新镜像
+（`agent2api:gov403-credits2-20261122` 起）已经原生画 WorkBuddy 式胶囊 + 弹窗，余额补丁不再需要，
+老镜像需要时可用 `FILES_ALL=1 sudo bash install.sh` 一起装。
 
 ```bash
 # 在网关宿主机上（容器名默认 agent2api，可用 CONTAINER=xxx 覆盖）
@@ -340,6 +342,15 @@ WorkBuddy 那种是**一行「可用 466 ▾」**、明细收进浮层。这件�
 
 这个字段还有第二个用处：它会落进 `account_usage_records.remaining`（`core/usage_records.rs:319-332`），转发选路时按「余额不足跳过」用。本插件没有申报 `defaultLimiters`，所以宿主用默认阈值 `1.0`——两池同时为 0 的账号会被选路跳过（这种账号本来也打不动上游，行为可接受，但别把它当成 bug）。
 
+**积分倒计时（WorkBuddy 同款）**：`lib/usage.mjs` 另返回 `credits[]`，把活动积分那笔按
+`（通用积分, total, remain, expireAt = activityNextExpireTime）`上报；星火积分有余额时也补一行（无到期时刻就不造一个）。
+新镜像的宿主 `reports.mjs` 已把 credits 的 `name/unit/total/remain/expireAt/…` 原样透给面板，面板据此走
+WorkBuddy 那条原生渲染：胶囊按钮上的「7天 N」角标、弹窗里的「7 天内到期」汇总块、每行右侧的
+`usage-pop-soon-tag`（`X 天后到期` / `明天到期` / `{hours} 小时后到期`）。到期时刻照实上报，不伪造批次：
+AStudio 当前活动积分在约 22 天后到期，所以角标要等到进入 7 天窗口才会自动出现，在那之前弹窗里显示的是
+绝对到期日期；上游一旦给出更近的批次或到期进入 7 天内，显示形式与 WorkBuddy 完全一致。
+顶层另加 `unit: "积分"`，让 `availableView` 变成「可用 1600 积分」而不是裸数字。
+
 **会员**：`membership/me` 的 `planName` 作计划名、`endTime` 作到期时间、`uid` 作账号标识。
 
 读不到时不会染红整列：带 `plan` 的返回会被 `host/reports.mjs:29` 降级成 warnings 里的一条提示。
@@ -402,7 +413,7 @@ WorkBuddy 那种是**一行「可用 466 ▾」**、明细收进浮层。这件�
 ## 开发
 
 ```bash
-node --test "test/*.test.mjs"     # 76 条：协议常量、SSO 状态机、六种登录方式、验证码解析、滑块发码、目录合并、登录/续期/余额/签到全链路、老账号升级
+node --test "test/*.test.mjs"     # 78 条：协议常量、SSO 状态机、六种登录方式、验证码解析、滑块发码、目录合并、登录/续期/余额/签到全链路、老账号升级
 python scripts/gen-icon.py        # 重画图标（需要 Pillow），同时写 assets/icon.png 与 icon.mjs
 ```
 

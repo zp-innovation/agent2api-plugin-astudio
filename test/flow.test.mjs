@@ -169,6 +169,40 @@ test("usage reports both point pools without letting them gate requests", async 
   }
 });
 
+test("usage reports credits with the absolute expiry for WorkBuddy-style countdown", async () => {
+  const world = stub({
+    "GET /xingchen-studio/points/balance": ok({ totalBalance: 1600, activityBalance: 1600, activityNextExpireTime: "2026-12-15T04:54:08", sparkTotalBalance: 0 }),
+    "GET /xingchen-studio/membership/me": ok({ planName: "体验版" }),
+  });
+  try {
+    const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
+    assert.equal(report.unit, "积分");
+    assert.deepEqual(report.credits, [
+      { name: "通用积分", unit: "积分", total: 1600, remain: 1600, expireAt: "2026-12-15T04:54:08" },
+    ]);
+    // 星火积分为 0 时不占一行，避免面板出现「剩 0」的噪声明细。
+    assert.equal(report.credits.length, 1);
+  } finally {
+    world.restore();
+  }
+});
+
+test("usage credit rows cover a non-zero spark pool without inventing an expiry", async () => {
+  const world = stub({
+    "GET /xingchen-studio/points/balance": ok({ totalBalance: 1200, sparkTotalBalance: 300 }),
+    "GET /xingchen-studio/membership/me": ok({ planName: "体验版" }),
+  });
+  try {
+    const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s" } });
+    // 没给活动积分/到期时刻时不伪造一行带 expireAt 的明细。
+    assert.deepEqual(report.credits.map((c) => c.name), ["星火积分"]);
+    assert.equal(report.credits[0].remain, 300);
+    assert.equal("expireAt" in report.credits[0], false);
+  } finally {
+    world.restore();
+  }
+});
+
 test("usage adds both point pools into the single available number", async () => {
   const world = stub({
     "GET /xingchen-studio/points/balance": ok({ totalBalance: 1200, sparkTotalBalance: 300 }),

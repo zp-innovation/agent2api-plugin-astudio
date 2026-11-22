@@ -1,6 +1,6 @@
 {
   "name": "agent2api-plugin-astudio",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "private": true,
   "description": "AStudio（星辰 Agent Studio / 讯飞星辰）作为 magpie / agent2api provider：微信扫码、手机验证码、凭据导入登录，Responses 协议对话，模型目录、积分余额与每日登录签到",
   "type": "module",

@@ -4,16 +4,23 @@
 #   sudo bash install.sh            # 安装 / 重新安装
 #   sudo bash install.sh uninstall  # 卸载（恢复 index.html 并删掉脚本）
 #
-# 三个补丁：
+# 默认装两个补丁：
 #   astudio-qr-modal.js     微信二维码改成面板内弹窗（不再开新标签页）
 #   astudio-sms-login.js    手机验证码登录改成面板内「手机号 + 极验滑块 + 验证码」
-#   astudio-usage-compact.js 余额列从整块卡片改成单条读数 + 点开弹窗（WorkBuddy 形态）
+#
+# astudio-usage-compact.js 在 agent2api:gov403-credits2-20261122 及更新的镜像上**不需要**：
+# 新面板已原生把 windows/credits 画成 WorkBuddy 式胶囊 + 弹窗，脚本插件只要上报 credits
+# 就有「7天 N」角标与「X 天后到期」标签（见 lib/usage.mjs）。老镜像若还要用它：
+#   FILES_ALL=1 sudo bash install.sh
 #
 # 镜像升级（docker compose pull / 重建容器）会覆盖 /app/ui，升级后要再执行一次。
 set -eo pipefail
 
 CONTAINER="${CONTAINER:-agent2api}"
-FILES="astudio-qr-modal.js astudio-sms-login.js astudio-usage-compact.js"
+FILES="astudio-qr-modal.js astudio-sms-login.js"
+if [ "${FILES_ALL:-0}" = "1" ]; then
+  FILES="$FILES astudio-usage-compact.js"
+fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ACTION="${1:-install}"
 
