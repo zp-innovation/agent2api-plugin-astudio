@@ -107,7 +107,7 @@ test("usage keeps the plan when the upstream throws, so it degrades to a warning
       session: { accountId: "1", ssoSessionId: "s" },
     }));
     assert.equal(report.plan, "AStudio · zp");
-    assert.deepEqual(report.windows, []);
+    assert.equal("windows" in report, false);
     assert.match(report.error, /不可达|offline/);
     assert.equal(report.signIn, undefined);
   } finally {

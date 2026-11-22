@@ -3,7 +3,7 @@
 AStudio（讯飞星辰 Agent Studio）作为 [agent2api](https://github.com/zp-innovation/agent2api) / magpie provider：**微信扫码登录 + Responses 协议对话 + 模型目录 + 积分余额 + 每日登录签到**。
 
 > Provider id: `astudio`　对话: `https://astronstudio-api-volces-prod.xf-yun.com/model-gateway/v1`　账号面: `https://agent.xfyun.cn/xingchen-studio/`
-> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.8.2`
+> 仓库: https://github.com/zp-innovation/agent2api-plugin-astudio　当前版本: `0.8.3`
 
 ---
 
@@ -342,12 +342,6 @@ WorkBuddy 那种是**一行「可用 466 ▾」**、明细收进浮层。这件�
 
 这个字段还有第二个用处：它会落进 `account_usage_records.remaining`（`core/usage_records.rs:319-332`），转发选路时按「余额不足跳过」用。本插件没有申报 `defaultLimiters`，所以宿主用默认阈值 `1.0`——两池同时为 0 的账号会被选路跳过（这种账号本来也打不动上游，行为可接受，但别把它当成 bug）。
 
-**积分倒计时（WorkBuddy 同款）**：两处必须同时到位，缺一处面板就只画老的分窗口卡片。
+**积分倒计时（WorkBuddy 同款）**：面板只画**一条胶囊 + 弹窗**，不要「分窗口额度」那块。
 
-1. **能力门**：新镜像的宿主 `models.mjs` 从 `hooks.auth.accountFeatures` 生成 `/api/session` 的
-   `accountFeatures.astudio`，其中 `creditDetail`/`creditExpiry` 一一对应插件声明的
-   `creditDetail`/`creditExpiry`。面板 `ui.js` 的 `jM()`/`sx()` 读这两个门：关着时 `qOe()`
-   直接跳过 `credits[]`，直接跳过 `credits[]`，不弹「积分明细」。插件工厂已声明
-   `accountFeatures: { creditDetail: true, creditExpiry: true }`，部署后可用
-   `GET /api/session` 的 `accountFeatures.astudio.credit_detail/credit_expiry === true` 复核。
-2. **数据**：`lib/usage.mjs` 返回 `credits[]`，读 `points/details?direction=CREDIT` 的逐笔发放。上游会把同一笔发放**摊开成多条**（实测 7 笔每日登录赠送 + 1 笔客户端下载奖励），直接上报就是 8 行重复读数。所以插件先**去重**（同名 + 同到期 + 同数额的批次只留一条），再**按池子合并成一行**：`total`/`remain` 相加，到期取最近的一笔，生效时间取最早的一笔。每个积分池最终只出一条，形态与 AutoClaw / WorkBuddy 一致。时间补 `+08:00`（宿主 `Date.parse` 才不会错 8 小时）。逐笔失败才回退到 `points/balance` 的活动积分聚合行；不伪造 7 天批次。新镜像宿主 `reports.mjs` 已把 credits 原样透给面板，`qOe()` 据此画 WorkBuddy 同款胶囊 + 「积分明细」弹窗；某笔批次进入 7 天窗口时，胶囊上出现「7天 N」角标，弹窗里出现「7 天内到期」汇总与每行 `usage-pop-soon-tag`（`X 天后到期` / `明天到期` / `{hours} 小时后到期`）。
+1. **不上报 `windows`**：面板 `LOe()` 的分支顺序是 `totalLeft → windows → available`，只要 `windows` 非空就渲染「分窗口额度」整块卡片（体验版 / 额度详情 / 通用积分 / 星火积分 / 分窗口额度）。插件停止构造 `windows`，面板直接落到 `available` 分支，胶囊上只显示「可用 N 积分」，积分明细由 `credits` 在弹窗里展示。

@@ -157,10 +157,10 @@ test("usage reports both point pools without letting them gate requests", async 
     assert.equal(report.plan, "旗舰版");
     assert.equal(report.user, "10086");
     assert.equal(report.until, "2027-06-01 00:00:00");
-    assert.deepEqual(report.windows.map((row) => row.name), ["通用积分", "星火积分"]);
-    for (const row of report.windows) assert.equal(row.aside, true);
-    assert.equal(report.windows[0].balance, 1200);
-    assert.equal(report.windows[0].runsOut, 500);
+    // 不再上报 windows：面板有 windows 就会画「分窗口额度」整块卡片，
+    // 用户要的是 WorkBuddy 式一条胶囊 + 积分明细弹窗。
+    assert.equal("windows" in report, false);
+    assert.equal(report.balance, 1200);
     assert.equal(report.error, undefined);
     // 顶层这一个数是面板「可用合计」和选路「余额不足」唯一的依据。
     assert.equal(report.balance, 1200);
@@ -259,7 +259,7 @@ test("usage adds both point pools into the single available number", async () =>
   try {
     const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s", token: "t" } });
     assert.equal(report.balance, 1500);
-    assert.deepEqual(report.windows.map((row) => row.balance), [1200, 300]);
+    assert.equal("windows" in report, false);
     assert.equal(report.plan, "体验版");
   } finally {
     world.restore();
@@ -274,7 +274,7 @@ test("usage keeps the available number one shape: absent when the reading failed
   try {
     const report = await usageReport({ access: "bearer-1", session: { accountId: "1", ssoSessionId: "s", token: "t" } });
     assert.equal("balance" in report, false);
-    assert.deepEqual(report.windows, []);
+    assert.equal("windows" in report, false);
     assert.match(report.error, /系统繁忙/);
   } finally {
     world.restore();
