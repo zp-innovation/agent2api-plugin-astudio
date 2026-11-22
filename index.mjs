@@ -9,8 +9,9 @@
  */
 import { ICON } from "./icon.mjs";
 import { API_BASE, PROVIDER_ID } from "./lib/endpoints.mjs";
+import { describe } from "./lib/http.mjs";
 import { checkinReport } from "./lib/checkin.mjs";
-import { desktopHeaders, describe } from "./lib/http.mjs";
+import { desktopHeaders } from "./lib/http.mjs";
 import { upgradeLegacy } from "./lib/legacy.mjs";
 import {
   authorizeCredential, authorizeLocal, authorizeScan, authorizeSms, authorizeToken, useLoginLogger,
@@ -119,7 +120,7 @@ export async function AStudioPlugin({ client } = {}) {
     try {
       const auth = await readAuth();
       upgrade(auth);
-      return await usageReport(auth);
+            return await usageReport(auth);
     } catch (error) {
       // reports.mjs:29 —— 只有 signIn 或「有 error 又读不到任何读数」才会抛错染红整列；
       // 带上 plan 就能把它降级成 warnings 里的一条提示。
