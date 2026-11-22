@@ -1,7 +1,7 @@
 
 import http.server, socketserver, threading, functools, os, random
 from playwright.sync_api import sync_playwright
-ROOT = r"D:\Development\Agent2Plugin\AStudio\host-patch\probe"
+ROOT = r"D:\Development\Agent2Plugin\plugins\agent2api-plugin-astudio\host-patch\probe"
 h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 srv = socketserver.ThreadingTCPServer(("127.0.0.1", 8899), h); srv.daemon_threads=True
 threading.Thread(target=srv.serve_forever, daemon=True).start()

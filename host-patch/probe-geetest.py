@@ -2,7 +2,7 @@
 import http.server, socketserver, threading, functools, json, os, sys, time
 from playwright.sync_api import sync_playwright
 
-ROOT = r"D:\Development\Agent2Plugin\AStudio\host-patch\probe"
+ROOT = r"D:\Development\Agent2Plugin\plugins\agent2api-plugin-astudio\host-patch\probe"
 os.makedirs(ROOT, exist_ok=True)
 
 HTML = """<!doctype html><html><head><meta charset="utf-8"><title>geetest probe</title>

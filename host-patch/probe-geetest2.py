@@ -1,7 +1,7 @@
 
 import http.server, socketserver, threading, functools, json, os
 from playwright.sync_api import sync_playwright
-ROOT = r"D:\Development\Agent2Plugin\AStudio\host-patch\probe"
+ROOT = r"D:\Development\Agent2Plugin\plugins\agent2api-plugin-astudio\host-patch\probe"
 HTML = """<!doctype html><html><head><meta charset="utf-8"><title>geetest probe</title>
 <style>body{background:#1e1f22;color:#ddd;font-family:system-ui;margin:0;padding:16px}</style></head>
 <body><h3>geetest probe</h3><div id="w" style="width:320px"></div>

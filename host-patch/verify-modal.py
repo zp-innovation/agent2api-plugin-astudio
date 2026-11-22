@@ -2,8 +2,8 @@
 import json, urllib.request, secrets, string, os
 from playwright.sync_api import sync_playwright
 
-PATCH = r"D:\Development\Agent2Plugin\AStudio\host-patch\astudio-qr-modal.js"
-OUT = r"D:\Development\Agent2Plugin\AStudio\host-patch\preview"
+PATCH = r"D:\Development\Agent2Plugin\plugins\agent2api-plugin-astudio\host-patch\astudio-qr-modal.js"
+OUT = r"D:\Development\Agent2Plugin\plugins\agent2api-plugin-astudio\host-patch\preview"
 os.makedirs(OUT, exist_ok=True)
 
 # 1) 拿一张真二维码（上游 SSO 取码接口，8 位会话号）
